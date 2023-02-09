@@ -7,10 +7,16 @@ services:
     container_name: smart-contract-monitor
     environment:
       - RPC_URL=${RPC_URL}
+      - METRICS_PORT=2112
     logging:
       driver: fluentd
       options:
         fluentd-address: localhost:24224
+    expose:
+      - "2112"
+    depends_on:
+      - fluent-bit
+      - loki
 
   fluent-bit:
     image: grafana/fluent-bit-plugin-loki:latest
@@ -22,12 +28,22 @@ services:
     ports:
       - "24224:24224"
       - "24224:24224/udp"
+    depends_on:
+      - loki
 
   loki:
     image: grafana/loki:latest
     container_name: loki
     expose:
       - "3100"
+  
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - 9090:9090
 
   grafana:
     image: grafana/grafana:latest
@@ -38,6 +54,11 @@ services:
       GF_RENDERING_SERVER_URL: http://renderer:8081/render
       GF_RENDERING_CALLBACK_URL: http://grafana:3000/
       GF_LOG_FILTERS: rendering:debug
+    volumes:
+      - ./provisioning:/etc/grafana/provisioning
+    depends_on:
+      - loki
+      - prometheus
       
   renderer:
     image: grafana/grafana-image-renderer:latest

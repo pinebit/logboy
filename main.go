@@ -2,13 +2,27 @@ package main
 
 import (
 	"context"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
+)
+
+var (
+	promHeadsCount = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "scm_heads_count",
+		Help: "Number of Heads received",
+	})
+
+	RPC_URL      = os.Getenv("RPC_URL")
+	METRICS_PORT = os.Getenv("METRICS_PORT")
 )
 
 func main() {
@@ -28,8 +42,16 @@ func main() {
 		cancel()
 	}()
 
+	go func() {
+		http.Handle("/metrics", promhttp.Handler())
+		err := http.ListenAndServe(":"+METRICS_PORT, nil)
+		if err != nil {
+			logger.Fatalf("Failed to start metrics http server", "err", err)
+		}
+	}()
+
 	logger.Info("Connecting to RPC...")
-	client, err := ethclient.DialContext(ctx, os.Getenv("RPC_URL"))
+	client, err := ethclient.DialContext(ctx, RPC_URL)
 	if err != nil {
 		logger.Fatalw("Failed to connect to RPC", "err", err)
 	}
@@ -52,6 +74,7 @@ mainLoop:
 			break mainLoop
 		case header := <-headsCh:
 			logger.Infof("Received header: %d", header.Number)
+			promHeadsCount.Inc()
 		}
 	}
 
