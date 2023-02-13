@@ -1,6 +1,6 @@
-# smart-contract-monitor
+# LOGBOY
 
-Microservice monitoring Smart Contracts on-chain.
+A microservice monitoring Smart Contract events (EVM).
 
 ## Why?
 
