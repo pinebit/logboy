@@ -1,4 +1,4 @@
-# LOGBOY
+# Observatory
 
 A microservice monitoring Smart Contract events (EVM).
 
