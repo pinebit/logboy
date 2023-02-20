@@ -6,8 +6,8 @@ COPY * ./
 
 RUN apk add build-base
 RUN go mod download
-RUN go build -o /smart-contract-monitor
+RUN go build -o /obry
 
-# EXPOSE 8080
+EXPOSE 8080
 
-CMD [ "/smart-contract-monitor" ]
+CMD [ "/obry" ]

@@ -1,0 +1,22 @@
+{
+    "rpc": {
+        "polygon_mumbai": "wss://polygon-mumbai.g.alchemy.com/v2/sqj8TLZaV4qUeaRLZo-Yt7L0X4mDnWdH",
+        "eth_mainnet": "wss://eth-mainnet.g.alchemy.com/v2/y9pUreBDoofUiAPuAd2qm6PxN0OMFmNG"
+    },
+    "contracts": [
+        {
+            "name": "FooBar",
+            "abi": "abis/FooBar.abi",
+            "addresses": [
+                "0x123...",
+                "0x456..."
+            ]
+        }
+    ],
+    "postgres": {
+        "conn": "$POSTGRES_URL"
+    },
+    "server": {
+        "port": 8080
+    }
+}
