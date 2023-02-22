@@ -24,7 +24,7 @@ var (
 	promEvents = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "obry_events",
 		Help: "The total number of events per contract, address and event name",
-	}, []string{"contractName", "contractAddress", "eventName"})
+	}, []string{"rpc", "contractName", "contractAddress", "eventName"})
 )
 
 func NewLogHandler(logger *zap.SugaredLogger) LogHandler {
@@ -47,6 +47,7 @@ func (h logHandler) Handle(ctx context.Context, rpc RPC, log types.Log, contract
 			logKeysAndValues = append(logKeysAndValues, ".contractName", contract.Name())
 			logKeysAndValues = append(logKeysAndValues, ".contractAddress", log.Address)
 			logKeysAndValues = append(logKeysAndValues, ".eventName", event.Name)
+			logKeysAndValues = append(logKeysAndValues, ".removed", log.Removed)
 
 			for i, input := range event.Inputs {
 				if input.Indexed {
@@ -76,7 +77,7 @@ func (h logHandler) Handle(ctx context.Context, rpc RPC, log types.Log, contract
 
 			h.logger.Infow("Event", logKeysAndValues...)
 
-			promEvents.WithLabelValues(contract.Name(), log.Address.Hex(), event.Name).Inc()
+			promEvents.WithLabelValues(rpc.Name(), contract.Name(), log.Address.Hex(), event.Name).Inc()
 		}
 	}
 }
