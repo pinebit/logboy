@@ -1,8 +1,11 @@
-module github.com/pinebit/smart-contract-monitor
+module github.com/pinebit/obry
 
 go 1.19
 
-require go.uber.org/zap v1.24.0
+require (
+	go.uber.org/zap v1.24.0
+	golang.org/x/sync v0.1.0
+)
 
 require (
 	github.com/pkg/errors v0.9.1 // indirect

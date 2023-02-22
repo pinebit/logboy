@@ -1,4 +1,4 @@
-package obry
+package app
 
 import (
 	"encoding/json"
