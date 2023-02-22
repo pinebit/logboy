@@ -6,6 +6,7 @@ import (
 	"os"
 	"path"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
@@ -26,21 +27,29 @@ type EventABI struct {
 
 type Contracts interface {
 	EventsForContract(name string) []EventABI
+	AddressesForContract(name string) []common.Address
 }
 
 type contracts struct {
-	events map[string][]EventABI
+	events    map[string][]EventABI
+	addresses map[string][]common.Address
 }
 
 var (
 	promConfiguredEvents = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "obry_configured_events",
-		Help: "The total number of events loaded for configured contracts",
+		Help: "The total number of events configured per contract",
+	}, []string{"contractName"})
+
+	promConfiguredAddresses = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "obry_configured_addresses",
+		Help: "The total number of addresses configured per contract",
 	}, []string{"contractName"})
 )
 
 func LoadContracts(config *Config, basePath string) (Contracts, error) {
 	eventsMap := make(map[string][]EventABI)
+	addressesMap := make(map[string][]common.Address)
 
 	for _, contract := range config.Contracts {
 		abiData, err := os.ReadFile(path.Join(basePath, contract.ABI))
@@ -54,12 +63,27 @@ func LoadContracts(config *Config, basePath string) (Contracts, error) {
 		}
 
 		eventsMap[contract.Name] = events
+
+		var addresses []common.Address
+		for _, address := range contract.Addresses {
+			if !common.IsHexAddress(address) {
+				return nil, fmt.Errorf("failed to parse %s address: %s", contract.Name, address)
+			}
+			addresses = append(addresses, common.HexToAddress(address))
+		}
+		addressesMap[contract.Name] = addresses
+
 		promConfiguredEvents.WithLabelValues(contract.Name).Add(float64(len(events)))
+		promConfiguredAddresses.WithLabelValues(contract.Name).Add(float64(len(contract.Addresses)))
 	}
 
-	return &contracts{eventsMap}, nil
+	return &contracts{eventsMap, addressesMap}, nil
 }
 
 func (c contracts) EventsForContract(name string) []EventABI {
 	return c.events[name]
+}
+
+func (c contracts) AddressesForContract(name string) []common.Address {
+	return c.addresses[name]
 }

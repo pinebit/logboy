@@ -8,8 +8,7 @@
             "name": "FooBar",
             "abi": "FooBar.abi",
             "addresses": [
-                "0x123...",
-                "0x456..."
+                "0x4Dc75ca593c2fA13b03E9f903276860043c33c4b"
             ]
         }
     ],
