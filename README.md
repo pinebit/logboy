@@ -1,3 +1,3 @@
 # OBRY
 
-A microservice enabling Smart Contract events observability.
+A microservice for Smart Contract events observability & analytics.

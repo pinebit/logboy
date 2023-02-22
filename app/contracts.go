@@ -11,30 +11,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
-type EventInputABI struct {
-	Indexed      bool   `json:"indexed"`
-	InternalType string `json:"internalType"`
-	Name         string `json:"name"`
-	Type         string `json:"type"`
-}
-
-type EventABI struct {
-	Name      string          `json:"name"`
-	Type      string          `json:"type"`
-	Anonymous bool            `json:"anonymous"`
-	Inputs    []EventInputABI `json:"inputs"`
-}
-
-type Contracts interface {
-	EventsForContract(name string) []EventABI
-	AddressesForContract(name string) []common.Address
-}
-
-type contracts struct {
-	events    map[string][]EventABI
-	addresses map[string][]common.Address
-}
-
 var (
 	promConfiguredEvents = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "obry_configured_events",
@@ -47,43 +23,33 @@ var (
 	}, []string{"contractName"})
 )
 
-func LoadContracts(config *Config, basePath string) (Contracts, error) {
-	eventsMap := make(map[string][]EventABI)
-	addressesMap := make(map[string][]common.Address)
+func LoadContracts(config *Config, basePath string) ([]Contract, error) {
+	var contracts []Contract
 
-	for _, contract := range config.Contracts {
-		abiData, err := os.ReadFile(path.Join(basePath, contract.ABI))
+	for _, contractConfig := range config.Contracts {
+		abiData, err := os.ReadFile(path.Join(basePath, contractConfig.ABI))
 		if err != nil {
-			return nil, fmt.Errorf("failed to read ABI file: %s, err: %v", contract.ABI, err)
+			return nil, fmt.Errorf("failed to read ABI file: %s, err: %v", contractConfig.ABI, err)
 		}
 
 		var events []EventABI
 		if err := json.Unmarshal(abiData, &events); err != nil {
-			return nil, fmt.Errorf("failed to decode ABI file: %s, err: %v", contract.ABI, err)
+			return nil, fmt.Errorf("failed to decode ABI file: %s, err: %v", contractConfig.ABI, err)
 		}
 
-		eventsMap[contract.Name] = events
-
 		var addresses []common.Address
-		for _, address := range contract.Addresses {
+		for _, address := range contractConfig.Addresses {
 			if !common.IsHexAddress(address) {
-				return nil, fmt.Errorf("failed to parse %s address: %s", contract.Name, address)
+				return nil, fmt.Errorf("failed to parse %s address: %s", contractConfig.Name, address)
 			}
 			addresses = append(addresses, common.HexToAddress(address))
 		}
-		addressesMap[contract.Name] = addresses
 
-		promConfiguredEvents.WithLabelValues(contract.Name).Add(float64(len(events)))
-		promConfiguredAddresses.WithLabelValues(contract.Name).Add(float64(len(contract.Addresses)))
+		promConfiguredEvents.WithLabelValues(contractConfig.Name).Add(float64(len(events)))
+		promConfiguredAddresses.WithLabelValues(contractConfig.Name).Add(float64(len(contractConfig.Addresses)))
+
+		contracts = append(contracts, NewContract(contractConfig.Name, events, addresses))
 	}
 
-	return &contracts{eventsMap, addressesMap}, nil
-}
-
-func (c contracts) EventsForContract(name string) []EventABI {
-	return c.events[name]
-}
-
-func (c contracts) AddressesForContract(name string) []common.Address {
-	return c.addresses[name]
+	return contracts, nil
 }

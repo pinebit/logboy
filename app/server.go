@@ -28,7 +28,7 @@ func NewServer(appContext AppContext) Server {
 }
 
 func (s *server) Run() error {
-	logger := s.appContext.Logger("Server")
+	logger := s.appContext.Logger("server")
 	g, gctx := errgroup.WithContext(s.appContext.Context())
 
 	g.Go(func() error {
