@@ -1,37 +1,26 @@
 package app
 
-import "github.com/ethereum/go-ethereum/common"
-
-type EventInputABI struct {
-	Indexed      bool   `json:"indexed"`
-	InternalType string `json:"internalType"`
-	Name         string `json:"name"`
-	Type         string `json:"type"`
-}
-
-type EventABI struct {
-	Name      string          `json:"name"`
-	Type      string          `json:"type"`
-	Anonymous bool            `json:"anonymous"`
-	Inputs    []EventInputABI `json:"inputs"`
-}
+import (
+	"github.com/ethereum/go-ethereum/accounts/abi"
+	"github.com/ethereum/go-ethereum/common"
+)
 
 type Contract interface {
 	Name() string
-	Events() []EventABI
+	ABI() abi.ABI
 	Addresses() []common.Address
 }
 
 type contract struct {
 	name      string
-	events    []EventABI
+	abi       abi.ABI
 	addresses []common.Address
 }
 
-func NewContract(name string, events []EventABI, addresses []common.Address) Contract {
+func NewContract(name string, abi abi.ABI, addresses []common.Address) Contract {
 	return &contract{
 		name:      name,
-		events:    events,
+		abi:       abi,
 		addresses: addresses,
 	}
 }
@@ -40,8 +29,8 @@ func (c contract) Addresses() []common.Address {
 	return c.addresses
 }
 
-func (c contract) Events() []EventABI {
-	return c.events
+func (c contract) ABI() abi.ABI {
+	return c.abi
 }
 
 func (c contract) Name() string {

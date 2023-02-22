@@ -28,7 +28,7 @@ type app struct {
 }
 
 func NewApp(configPath string) App {
-	zapLogger, _ := zap.NewDevelopment()
+	zapLogger, _ := zap.NewProduction()
 	logger := zapLogger.Sugar()
 
 	logger.Debugf("Loading config from %s...", configPath)

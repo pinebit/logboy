@@ -1,11 +1,12 @@
 package app
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path"
+	"strings"
 
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -32,9 +33,9 @@ func LoadContracts(config *Config, basePath string) ([]Contract, error) {
 			return nil, fmt.Errorf("failed to read ABI file: %s, err: %v", contractConfig.ABI, err)
 		}
 
-		var events []EventABI
-		if err := json.Unmarshal(abiData, &events); err != nil {
-			return nil, fmt.Errorf("failed to decode ABI file: %s, err: %v", contractConfig.ABI, err)
+		abi, err := abi.JSON(strings.NewReader(string(abiData)))
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode ABI: %s, err: %v", contractConfig.ABI, err)
 		}
 
 		var addresses []common.Address
@@ -45,10 +46,10 @@ func LoadContracts(config *Config, basePath string) ([]Contract, error) {
 			addresses = append(addresses, common.HexToAddress(address))
 		}
 
-		promConfiguredEvents.WithLabelValues(contractConfig.Name).Add(float64(len(events)))
+		promConfiguredEvents.WithLabelValues(contractConfig.Name).Add(float64(len(abi.Events)))
 		promConfiguredAddresses.WithLabelValues(contractConfig.Name).Add(float64(len(contractConfig.Addresses)))
 
-		contracts = append(contracts, NewContract(contractConfig.Name, events, addresses))
+		contracts = append(contracts, NewContract(contractConfig.Name, abi, addresses))
 	}
 
 	return contracts, nil

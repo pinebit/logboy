@@ -21,7 +21,46 @@
 				"type": "string"
 			}
 		],
-		"name": "SomeEvent",
+		"name": "SomeEventIndexed",
 		"type": "event"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": false,
+				"internalType": "address",
+				"name": "user",
+				"type": "address"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "foo",
+				"type": "uint256"
+			},
+			{
+				"indexed": false,
+				"internalType": "string",
+				"name": "bar",
+				"type": "string"
+			}
+		],
+		"name": "SomeEventNormal",
+		"type": "event"
+	},
+	{
+		"inputs": [],
+		"name": "fireIndexed",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "fireNormal",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
 	}
 ]
