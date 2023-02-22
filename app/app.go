@@ -17,14 +17,14 @@ type AppContext interface {
 	Context() context.Context
 	Logger(name string) *zap.SugaredLogger
 	Config() *Config
-	ABI() ABI
+	Contracts() Contracts
 }
 
 type app struct {
-	ctx    context.Context
-	logger *zap.SugaredLogger
-	config *Config
-	abi    ABI
+	ctx       context.Context
+	logger    *zap.SugaredLogger
+	config    *Config
+	contracts Contracts
 }
 
 func NewApp(configPath string) App {
@@ -37,16 +37,16 @@ func NewApp(configPath string) App {
 		logger.Fatalf("Failed to read config from JSON: %v", err)
 	}
 
-	logger.Debug("Loading ABIs...")
-	abi, err := LoadABI(config, path.Dir(configPath))
+	logger.Debug("Configuring contracts...")
+	abi, err := LoadContracts(config, path.Dir(configPath))
 	if err != nil {
-		logger.Fatalf("Failed to load ABI: %v", err)
+		logger.Fatalf("Failed to configure contracts: %v", err)
 	}
 
 	return &app{
-		logger: logger,
-		config: config,
-		abi:    abi,
+		logger:    logger,
+		config:    config,
+		contracts: abi,
 	}
 }
 
@@ -62,8 +62,8 @@ func (a app) Config() *Config {
 	return a.config
 }
 
-func (a app) ABI() ABI {
-	return a.abi
+func (a app) Contracts() Contracts {
+	return a.contracts
 }
 
 func (a app) Close() {

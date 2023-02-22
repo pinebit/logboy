@@ -17,6 +17,6 @@
         "conn": "$POSTGRES_URL"
     },
     "server": {
-        "port": 8080
+        "port": 3000
     }
 }

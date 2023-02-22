@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -18,13 +19,12 @@ type server struct {
 }
 
 func NewServer(appContext AppContext) Server {
-	s := &server{
+	return &server{
 		appContext,
 		&http.Server{
 			Addr: fmt.Sprintf(":%d", appContext.Config().Server.Port),
 		},
 	}
-	return s
 }
 
 func (s *server) Run() error {
@@ -33,6 +33,8 @@ func (s *server) Run() error {
 
 	g, gctx := errgroup.WithContext(s.appContext.Context())
 	g.Go(func() error {
+		logger.Debugf("Listening on port %s", s.httpServer.Addr)
+		http.Handle("/metrics", promhttp.Handler())
 		err := s.httpServer.ListenAndServe()
 		if err == http.ErrServerClosed {
 			return nil

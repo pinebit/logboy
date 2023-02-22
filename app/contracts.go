@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"os"
 	"path"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
 type EventInputABI struct {
@@ -21,15 +24,22 @@ type EventABI struct {
 	Inputs    []EventInputABI `json:"inputs"`
 }
 
-type ABI interface {
+type Contracts interface {
 	EventsForContract(name string) []EventABI
 }
 
-type abi struct {
+type contracts struct {
 	events map[string][]EventABI
 }
 
-func LoadABI(config *Config, basePath string) (ABI, error) {
+var (
+	promConfiguredEvents = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "obry_configured_events",
+		Help: "The total number of events loaded for configured contracts",
+	}, []string{"contractName"})
+)
+
+func LoadContracts(config *Config, basePath string) (Contracts, error) {
 	eventsMap := make(map[string][]EventABI)
 
 	for _, contract := range config.Contracts {
@@ -42,12 +52,14 @@ func LoadABI(config *Config, basePath string) (ABI, error) {
 		if err := json.Unmarshal(abiData, &events); err != nil {
 			return nil, fmt.Errorf("failed to decode ABI file: %s, err: %v", contract.ABI, err)
 		}
+
 		eventsMap[contract.Name] = events
+		promConfiguredEvents.WithLabelValues(contract.Name).Add(float64(len(events)))
 	}
 
-	return &abi{eventsMap}, nil
+	return &contracts{eventsMap}, nil
 }
 
-func (a abi) EventsForContract(name string) []EventABI {
-	return a.events[name]
+func (c contracts) EventsForContract(name string) []EventABI {
+	return c.events[name]
 }
