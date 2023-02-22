@@ -6,7 +6,7 @@
     "contracts": [
         {
             "name": "FooBar",
-            "abi": "abis/FooBar.abi",
+            "abi": "FooBar.abi",
             "addresses": [
                 "0x123...",
                 "0x456..."

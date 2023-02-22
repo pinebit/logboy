@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"path"
 
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
@@ -16,27 +17,36 @@ type AppContext interface {
 	Context() context.Context
 	Logger(name string) *zap.SugaredLogger
 	Config() *Config
+	ABI() ABI
 }
 
 type app struct {
 	ctx    context.Context
 	logger *zap.SugaredLogger
 	config *Config
+	abi    ABI
 }
 
-func NewApp() App {
+func NewApp(configPath string) App {
 	zapLogger, _ := zap.NewDevelopment()
 	logger := zapLogger.Sugar()
 
-	logger.Debug("Loading config from config/config.json...")
-	config, err := LoadConfigJSON("config/config.json")
+	logger.Debugf("Loading config from %s...", configPath)
+	config, err := LoadConfigJSON(configPath)
 	if err != nil {
 		logger.Fatalf("Failed to read config from JSON: %v", err)
+	}
+
+	logger.Debug("Loading ABIs...")
+	abi, err := LoadABI(config, path.Dir(configPath))
+	if err != nil {
+		logger.Fatalf("Failed to load ABI: %v", err)
 	}
 
 	return &app{
 		logger: logger,
 		config: config,
+		abi:    abi,
 	}
 }
 
@@ -50,6 +60,10 @@ func (a app) Logger(name string) *zap.SugaredLogger {
 
 func (a app) Config() *Config {
 	return a.config
+}
+
+func (a app) ABI() ABI {
+	return a.abi
 }
 
 func (a app) Close() {
