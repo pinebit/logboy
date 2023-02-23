@@ -1,29 +1,33 @@
 package app
 
 import (
-	"encoding/json"
 	"os"
+
+	"gopkg.in/yaml.v3"
 )
 
 type PostgresConfig struct {
-	URL string `json:"url"`
+	URL string `yaml:"url"`
 }
 
 type ServerConfig struct {
-	Port uint16 `json:"port"`
+	Port uint16 `yaml:"port"`
 }
 
 type ContractConfig struct {
-	Name      string   `json:"name"`
-	ABI       string   `json:"abi"`
-	Addresses []string `json:"addresses"`
+	ABI       string   `yaml:"abi"`
+	Addresses []string `yaml:"addresses"`
+}
+
+type ChainConfig struct {
+	RPC       string                    `yaml:"rpc"`
+	Contracts map[string]ContractConfig `yaml:"contracts"`
 }
 
 type Config struct {
-	RPC       map[string]string `json:"rpc"`
-	Postgres  PostgresConfig    `json:"postgres"`
-	Server    ServerConfig      `json:"server"`
-	Contracts []ContractConfig  `json:"contracts"`
+	Postgres PostgresConfig         `yaml:"postgres"`
+	Chains   map[string]ChainConfig `yaml:"chains"`
+	Server   ServerConfig           `yaml:"server"`
 }
 
 func LoadConfigJSON(jsonPath string) (*Config, error) {
@@ -35,8 +39,12 @@ func LoadConfigJSON(jsonPath string) (*Config, error) {
 	data = []byte(os.ExpandEnv(string(data)))
 
 	config := &Config{}
-	if err := json.Unmarshal(data, config); err != nil {
+	if err := yaml.Unmarshal(data, config); err != nil {
 		return nil, err
+	}
+
+	if config.Server.Port == 0 {
+		config.Server.Port = 3000
 	}
 
 	return config, err

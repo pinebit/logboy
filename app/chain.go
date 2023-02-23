@@ -14,9 +14,8 @@ import (
 	"go.uber.org/zap"
 )
 
-type RPC interface {
+type Chain interface {
 	Name() string
-	URL() string
 	RunLoop(ctx context.Context)
 }
 
@@ -27,30 +26,30 @@ type shared struct {
 	addressMap map[common.Address]Contract
 }
 
-type rpc struct {
+type chain struct {
 	name   string
-	url    string
+	rpc    string
 	shared *shared
 }
 
 var (
 	promConnections = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "lognite_rpc_alive_connections",
-		Help: "The current number of alive RPC connections",
-	}, []string{"connection"})
+		Help: "The current number of alive RPC connections per chain",
+	}, []string{"chainName"})
 
 	promReConnections = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "lognite_rpc_reconnections",
-		Help: "The total number of RPC reconnections",
-	}, []string{"connection"})
+		Help: "The total number of RPC reconnections per chain",
+	}, []string{"chainName"})
 
 	promLogsReceived = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "lognite_logs_received",
-		Help: "The total number of received logs per connection",
-	}, []string{"connection"})
+		Help: "The total number of received logs per chain",
+	}, []string{"chainName"})
 )
 
-func NewRPCs(config *Config, logger *zap.SugaredLogger, contracts []Contract, handler LogHandler) []RPC {
+func NewChains(config *Config, logger *zap.SugaredLogger, contracts []Contract, handler LogHandler) []Chain {
 	var addresses []common.Address
 	addressMap := make(map[common.Address]Contract)
 
@@ -68,41 +67,42 @@ func NewRPCs(config *Config, logger *zap.SugaredLogger, contracts []Contract, ha
 		addressMap: addressMap,
 	}
 
-	var rpcs []RPC
-	for name, url := range config.RPC {
-		rpc := &rpc{
-			name:   name,
-			url:    url,
+	var chains []Chain
+	for chainName, chainConfig := range config.Chains {
+		chain := &chain{
+			name:   chainName,
+			rpc:    chainConfig.RPC,
 			shared: shared,
 		}
-		rpcs = append(rpcs, rpc)
+		chains = append(chains, chain)
 	}
-	return rpcs
+	return chains
 }
 
-func (r rpc) Name() string {
-	return r.name
+func (c chain) Name() string {
+	return c.name
 }
 
-func (r rpc) URL() string {
-	return r.url
+func (c chain) URL() string {
+	return c.rpc
 }
 
-func (r rpc) RunLoop(ctx context.Context) {
-	logger := r.shared.logger.Named(r.name)
+func (c chain) RunLoop(ctx context.Context) {
+	logger := c.shared.logger.Named(c.name)
 
 	for {
-		promReConnections.WithLabelValues(r.name).Inc()
+		promReConnections.WithLabelValues(c.name).Inc()
 
-		client, err := ethclient.DialContext(ctx, r.url)
+		client, err := ethclient.DialContext(ctx, c.rpc)
 		if err != nil {
-			logger.Errorw("Failed to connect RPC", "url", r.url)
+			logger.Errorw("Failed to connect RPC", "url", c.rpc)
 		} else {
-			promConnections.WithLabelValues(r.name).Inc()
+			logger.Debugw("RPC connected", "url", c.rpc)
+			promConnections.WithLabelValues(c.name).Inc()
 
 			func() {
 				q := ethereum.FilterQuery{
-					Addresses: r.shared.addresses,
+					Addresses: c.shared.addresses,
 				}
 				logsCh := make(chan types.Log)
 
@@ -121,16 +121,16 @@ func (r rpc) RunLoop(ctx context.Context) {
 						logger.Errorw("Subscription error", "err", subErr)
 						return
 					case log := <-logsCh:
-						promLogsReceived.WithLabelValues(r.name).Inc()
-						contract := r.shared.addressMap[log.Address]
-						r.shared.handler.Handle(ctx, r, log, contract)
+						promLogsReceived.WithLabelValues(c.name).Inc()
+						contract := c.shared.addressMap[log.Address]
+						c.shared.handler.Handle(ctx, c, log, contract)
 					}
 				}
 			}()
 		}
 
 		client.Close()
-		promConnections.WithLabelValues(r.name).Dec()
+		promConnections.WithLabelValues(c.name).Dec()
 
 		if errors.Is(ctx.Err(), context.Canceled) {
 			return

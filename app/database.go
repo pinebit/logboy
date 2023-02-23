@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
@@ -12,7 +13,7 @@ type Database interface {
 	Connect(ctx context.Context, url string) error
 	Close(ctx context.Context) error
 
-	CreateSchemas(ctx context.Context, rpcs []RPC) error
+	MigrateSchema(ctx context.Context, rpcs []Chain, contracts []Contract) error
 }
 
 type database struct {
@@ -49,7 +50,7 @@ func (d *database) Close(ctx context.Context) error {
 	return nil
 }
 
-func (d database) CreateSchemas(ctx context.Context, rpcs []RPC) error {
+func (d database) MigrateSchema(ctx context.Context, rpcs []Chain, contracts []Contract) error {
 	if d.db == nil {
 		return errDatabaseClosed
 	}
@@ -61,6 +62,22 @@ func (d database) CreateSchemas(ctx context.Context, rpcs []RPC) error {
 
 	for _, rpc := range rpcs {
 		_, err := tx.ExecContext(ctx, "CREATE SCHEMA IF NOT EXISTS "+rpc.Name())
+		if err != nil {
+			defer tx.Rollback()
+			return err
+		}
+	}
+
+	for _, contract := range contracts {
+		q := fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s_events (id BIGSERIAL PRIMARY KEY);", contract.Name())
+		_, err := tx.ExecContext(ctx, q)
+		if err != nil {
+			defer tx.Rollback()
+			return err
+		}
+
+		q = fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s_methods (id BIGSERIAL PRIMARY KEY);", contract.Name())
+		_, err = tx.ExecContext(ctx, q)
 		if err != nil {
 			defer tx.Rollback()
 			return err

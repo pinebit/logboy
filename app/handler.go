@@ -13,7 +13,7 @@ import (
 
 type LogHandler interface {
 	// Must be re-entrant & thread-safe
-	Handle(ctx context.Context, rpc RPC, log types.Log, contract Contract)
+	Handle(ctx context.Context, rpc Chain, log types.Log, contract Contract)
 }
 
 type logHandler struct {
@@ -33,7 +33,7 @@ func NewLogHandler(logger *zap.SugaredLogger) LogHandler {
 	}
 }
 
-func (h logHandler) Handle(ctx context.Context, rpc RPC, log types.Log, contract Contract) {
+func (h logHandler) Handle(ctx context.Context, rpc Chain, log types.Log, contract Contract) {
 	h.logger.Debugw("Log", "connection", rpc.Name(), "address", log.Address, "contract", contract.Name(), "tx", log.TxHash, "topics", len(log.Topics))
 
 	abi := contract.ABI()

@@ -30,13 +30,13 @@ type app struct {
 }
 
 func NewApp(configPath string) App {
-	zapLogger, _ := zap.NewProduction()
+	zapLogger, _ := zap.NewDevelopment()
 	logger := zapLogger.Sugar()
 
 	logger.Debugf("Loading config from %s...", configPath)
 	config, err := LoadConfigJSON(configPath)
 	if err != nil {
-		logger.Fatalf("Failed to read config from JSON: %v", err)
+		logger.Fatalf("Failed to read config file: %v", err)
 	}
 
 	logger.Debug("Configuring contracts...")
@@ -80,7 +80,7 @@ func (a *app) Run() {
 	a.ctx = gctx
 
 	handler := NewLogHandler(a.logger.Named("handler"))
-	rpcs := NewRPCs(a.config, a.logger.Named("rpc"), a.contracts, handler)
+	chains := NewChains(a.config, a.logger.Named("rpc"), a.contracts, handler)
 
 	db := NewDatabase()
 	if err := db.Connect(ctx, a.config.Postgres.URL); err != nil {
@@ -88,15 +88,15 @@ func (a *app) Run() {
 	}
 	defer db.Close(ctx)
 
-	if err := db.CreateSchemas(ctx, rpcs); err != nil {
+	if err := db.MigrateSchema(ctx, chains, a.contracts); err != nil {
 		a.logger.Fatalw("Database.CreateSchemas failed", "err", err)
 	}
 
-	for _, rpc := range rpcs {
-		rpc := rpc
+	for _, chain := range chains {
+		chain := chain
 
 		g.Go(func() error {
-			rpc.RunLoop(gctx)
+			chain.RunLoop(gctx)
 			return nil
 		})
 	}
