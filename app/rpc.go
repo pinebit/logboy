@@ -35,17 +35,17 @@ type rpc struct {
 
 var (
 	promConnections = promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "obry_rpc_alive_connections",
+		Name: "lognite_rpc_alive_connections",
 		Help: "The current number of alive RPC connections",
 	}, []string{"connection"})
 
 	promReConnections = promauto.NewCounterVec(prometheus.CounterOpts{
-		Name: "obry_rpc_reconnections",
+		Name: "lognite_rpc_reconnections",
 		Help: "The total number of RPC reconnections",
 	}, []string{"connection"})
 
 	promLogsReceived = promauto.NewCounterVec(prometheus.CounterOpts{
-		Name: "obry_logs_received",
+		Name: "lognite_logs_received",
 		Help: "The total number of received logs per connection",
 	}, []string{"connection"})
 )

@@ -1,13 +1,13 @@
 # MVP Scope
 
-1. OBRY service with proper CI/CD, published as a docker image.
+1. LOGNITE service with proper CI/CD, published as a docker image.
 2. Landing page.
 3. Online documentation.
 4. Online wizard for docker-compose?
 
 -----
 
-1. ORBY service features
+1. LOGNITE service features
 - shall support multiple RPCs, one per network
 - shall support multiple contracts & events
 - config with yaml/toml

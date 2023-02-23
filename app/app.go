@@ -80,8 +80,25 @@ func (a *app) Run() {
 	handler := NewLogHandler(a.logger.Named("handler"))
 	rpcs := NewRPCs(a.config, a.logger.Named("rpc"), a.contracts, handler)
 
+	pg, err := ConnectPostgres(ctx, UnwrapConfigEnvVar(a.config.Postgres.Conn))
+	if err != nil {
+		a.logger.Fatalw("Failed to connect Postgres", "url", UnwrapConfigEnvVar(a.config.Postgres.Conn))
+	}
+	defer pg.Close(ctx)
+
 	for _, rpc := range rpcs {
 		rpc := rpc
+
+		if err := CreateSchema(ctx, pg, rpc.Name()); err != nil {
+			a.logger.Fatalw("Failed to create DB schema", "rpc", rpc.Name(), "err", err)
+		}
+
+		for _, contract := range a.contracts {
+			if err := CreateEventTable(ctx, pg, rpc.Name(), contract); err != nil {
+				a.logger.Fatalw("Failed to create contract table", "err", err)
+			}
+		}
+
 		g.Go(func() error {
 			rpc.RunLoop(gctx)
 			return nil

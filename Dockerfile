@@ -6,8 +6,8 @@ COPY * ./
 
 RUN apk add build-base
 RUN go mod download
-RUN go build -o /obry
+RUN go build -o /lognite
 
-EXPOSE 8080
+EXPOSE 3000
 
-CMD [ "/obry" ]
+CMD [ "/lognite" ]

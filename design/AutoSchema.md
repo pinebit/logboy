@@ -16,7 +16,7 @@ Assumptions:
 - Take into account multiple networks.
 
 But, for most users the desired experience is this:
-1. For the first time, OBRY creates inital tables per each event:
+1. For the first time, LOGNITE creates inital tables per each event:
 ```sql
 CREATE TABLE NETWORK.TestContract_SomeEvent(
     _id BIGSERIAL PRIMARY KEY,
@@ -32,14 +32,14 @@ CREATE INDEX TestContract_SomeEvent_Index ON TestContract_SomeEvent(_block_times
 CREATE INDEX TestContract_SomeEvent_User ON TestContract_SomeEvent(user);
 ```
 
-2. OBRY ingests SomeEvent data into the table from the designated contract address.
-2.1. OBRY backfills events if requested.
+2. LOGNITE ingests SomeEvent data into the table from the designated contract address.
+2.1. LOGNITE backfills events if requested.
 3. User can query the table.
 
 What happens if a user deploys the same contract multiple times?
 In this case the table schema does not change, but the ingestor populates different `_contract_address`.
 And, of course, the listener must be configured to listen to multiple addresses.
-For different chains, OBRY creates different PG schema (namespace).
+For different chains, LOGNITE creates different PG schema (namespace).
 
 What happens if a user changes ABI of a known event?
 e.g.
@@ -48,7 +48,7 @@ a) added a new param at the end: `ALTER TABLE xxx ADD COLUMN... SET DEFAULT?`
 b) a param is removed: `ALTER TABLE xxx DROP COLUMN...`
 c) event renamed => this is a new table
 d) a param type changed: `ALTER COLUMN xxx TYPE ...`
-OBRY should try converting existing data, if possible;
+LOGNITE should try converting existing data, if possible;
 if conversion is not possible:
 - create a new column with suffix `_newtype`, e.g. `bar_bytes32`
 - drop existing column and add new with default values (default as per config?)
@@ -65,6 +65,6 @@ CREATE TABLE NETWORK.TestContract_SomeEvent(
 ```
 
 TODO: handle reorgs...
-OBRY should remove removed txes from the tables...
+LOGNITE should remove removed txes from the tables...
 
 

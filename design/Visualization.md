@@ -2,7 +2,7 @@
 
 This is a built-in web-app that is a simple alternative to Grafana.
 
-An uber goal would be to run OBRY alone without any external dependency, such as Grafana, Postgres, etc.
+An uber goal would be to run LOGNITE alone without any external dependency, such as Grafana, Postgres, etc.
 To do that, we need a local DB to persist time-series, metrics, alerts, logs, etc.
 
 Visualizer:

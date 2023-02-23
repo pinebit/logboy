@@ -22,7 +22,7 @@ type logHandler struct {
 
 var (
 	promEvents = promauto.NewCounterVec(prometheus.CounterOpts{
-		Name: "obry_events",
+		Name: "lognite_events",
 		Help: "The total number of events per contract, address and event name",
 	}, []string{"rpc", "contractName", "contractAddress", "eventName"})
 )

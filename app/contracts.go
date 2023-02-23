@@ -14,12 +14,12 @@ import (
 
 var (
 	promConfiguredEvents = promauto.NewCounterVec(prometheus.CounterOpts{
-		Name: "obry_configured_events",
+		Name: "lognite_configured_events",
 		Help: "The total number of events configured per contract",
 	}, []string{"contractName"})
 
 	promConfiguredAddresses = promauto.NewCounterVec(prometheus.CounterOpts{
-		Name: "obry_configured_addresses",
+		Name: "lognite_configured_addresses",
 		Help: "The total number of addresses configured per contract",
 	}, []string{"contractName"})
 )

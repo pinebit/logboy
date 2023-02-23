@@ -1,3 +1,3 @@
-# OBRY
+# LOGNITE
 
-A microservice for Smart Contract events observability & analytics.
+A microservice for observing and ingesting of EVM logs.

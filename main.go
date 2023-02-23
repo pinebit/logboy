@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/pinebit/obry/app"
+	"github.com/pinebit/lognite/app"
 )
 
 const defaultConfigPath = "config/config.json"
