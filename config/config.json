@@ -13,7 +13,7 @@
         }
     ],
     "postgres": {
-        "conn": "$POSTGRES_URL"
+        "url": "$POSTGRES_URL"
     },
     "server": {
         "port": 3000

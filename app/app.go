@@ -6,6 +6,8 @@ import (
 
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
+
+	_ "github.com/joho/godotenv/autoload"
 )
 
 type App interface {
@@ -80,24 +82,18 @@ func (a *app) Run() {
 	handler := NewLogHandler(a.logger.Named("handler"))
 	rpcs := NewRPCs(a.config, a.logger.Named("rpc"), a.contracts, handler)
 
-	pg, err := ConnectPostgres(ctx, UnwrapConfigEnvVar(a.config.Postgres.Conn))
-	if err != nil {
-		a.logger.Fatalw("Failed to connect Postgres", "url", UnwrapConfigEnvVar(a.config.Postgres.Conn))
+	db := NewDatabase()
+	if err := db.Connect(ctx, a.config.Postgres.URL); err != nil {
+		a.logger.Fatalw("Failed to connect Postgres", "url", a.config.Postgres.URL)
 	}
-	defer pg.Close(ctx)
+	defer db.Close(ctx)
+
+	if err := db.CreateSchemas(ctx, rpcs); err != nil {
+		a.logger.Fatalw("Database.CreateSchemas failed", "err", err)
+	}
 
 	for _, rpc := range rpcs {
 		rpc := rpc
-
-		if err := CreateSchema(ctx, pg, rpc.Name()); err != nil {
-			a.logger.Fatalw("Failed to create DB schema", "rpc", rpc.Name(), "err", err)
-		}
-
-		for _, contract := range a.contracts {
-			if err := CreateEventTable(ctx, pg, rpc.Name(), contract); err != nil {
-				a.logger.Fatalw("Failed to create contract table", "err", err)
-			}
-		}
 
 		g.Go(func() error {
 			rpc.RunLoop(gctx)

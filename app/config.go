@@ -6,7 +6,7 @@ import (
 )
 
 type PostgresConfig struct {
-	Conn string `json:"conn"`
+	URL string `json:"url"`
 }
 
 type ServerConfig struct {
@@ -31,6 +31,8 @@ func LoadConfigJSON(jsonPath string) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	data = []byte(os.ExpandEnv(string(data)))
 
 	config := &Config{}
 	if err := json.Unmarshal(data, config); err != nil {
