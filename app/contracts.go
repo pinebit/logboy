@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	ethabi "github.com/ethereum/go-ethereum/accounts/abi"
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
@@ -39,18 +38,10 @@ func LoadContracts(config *Config, basePath string) ([]Contract, error) {
 				return nil, fmt.Errorf("failed to decode ABI: %s, err: %v", contractConfig.ABI, err)
 			}
 
-			var addresses []common.Address
-			for _, address := range contractConfig.Addresses {
-				if !common.IsHexAddress(address) {
-					return nil, fmt.Errorf("failed to parse %s address: %s", contractName, address)
-				}
-				addresses = append(addresses, common.HexToAddress(address))
-			}
-
 			promConfiguredEvents.WithLabelValues(chainName, contractName).Add(float64(len(abi.Events)))
 			promConfiguredAddresses.WithLabelValues(chainName, contractName).Add(float64(len(contractConfig.Addresses)))
 
-			contracts = append(contracts, NewContract(chainName, contractName, abi, addresses))
+			contracts = append(contracts, NewContract(chainName, contractName, abi, contractConfig.Addresses))
 		}
 	}
 

@@ -4,7 +4,6 @@ import (
 	"context"
 
 	ethabi "github.com/ethereum/go-ethereum/accounts/abi"
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -13,11 +12,12 @@ import (
 
 type LogHandler interface {
 	// Must be re-entrant & thread-safe
-	Handle(ctx context.Context, rpc Chain, log types.Log, contract Contract)
+	Handle(ctx context.Context, chain Chain, log types.Log, contract Contract)
 }
 
 type logHandler struct {
-	logger *zap.SugaredLogger
+	logger  *zap.SugaredLogger
+	outputs Outputs
 }
 
 var (
@@ -27,57 +27,57 @@ var (
 	}, []string{"rpc", "contractName", "contractAddress", "eventName"})
 )
 
-func NewLogHandler(logger *zap.SugaredLogger) LogHandler {
+func NewLogHandler(logger *zap.SugaredLogger, outputs Outputs) LogHandler {
 	return &logHandler{
-		logger: logger,
+		logger:  logger,
+		outputs: outputs,
 	}
 }
 
-func (h logHandler) Handle(ctx context.Context, rpc Chain, log types.Log, contract Contract) {
-	h.logger.Debugw("Log", "connection", rpc.Name(), "address", log.Address, "contract", contract.Name(), "tx", log.TxHash, "topics", len(log.Topics))
+func (h logHandler) Handle(ctx context.Context, chain Chain, log types.Log, contract Contract) {
+	h.logger.Debugw("Log", "chain", chain.Name(), "address", log.Address, "contract", contract.Name(), "tx", log.TxHash)
 
 	abi := contract.ABI()
 	event, err := abi.EventByID(log.Topics[0])
 	if err == nil {
-		v := make(map[string]interface{})
-		if err := abi.UnpackIntoMap(v, event.Name, log.Data); err != nil {
-			h.logger.Errorw("Failed to unpack event", "name", event.Name, "err", err)
+		args, err := parseArgumentValues(log, abi, event.Inputs, event.Name, chain.Name(), contract.Name())
+		if err != nil {
+			h.logger.Errorw("Failed to parse event", "name", event.Name, "err", err)
 		} else {
-			var logKeysAndValues []interface{}
-			logKeysAndValues = append(logKeysAndValues, ".contractName", contract.Name())
-			logKeysAndValues = append(logKeysAndValues, ".contractAddress", log.Address)
-			logKeysAndValues = append(logKeysAndValues, ".eventName", event.Name)
-			logKeysAndValues = append(logKeysAndValues, ".removed", log.Removed)
+			promEvents.WithLabelValues(chain.Name(), contract.Name(), log.Address.Hex(), event.Name).Inc()
 
-			for i, input := range event.Inputs {
-				if input.Indexed {
-					if len(log.Topics) >= i+1 {
-						var v interface{}
-						topicData := log.Topics[i+1].Bytes()
-
-						switch input.Type.T {
-						case ethabi.AddressTy:
-							v = common.BytesToAddress(topicData)
-						case ethabi.HashTy:
-							v = common.BytesToHash(topicData)
-						default:
-							h.logger.Errorw("Unsupported indexed type", "name", input.Name, "type", input.Type.String())
-						}
-
-						logKeysAndValues = append(logKeysAndValues, input.Name, v)
-					} else {
-						h.logger.Errorw("No topic for indexed input", "name", input.Name)
-					}
-				}
+			for _, output := range h.outputs.GetAll() {
+				output.Write(ctx, log, contract, event.Name, args)
 			}
-
-			for k, v := range v {
-				logKeysAndValues = append(logKeysAndValues, k, v)
-			}
-
-			h.logger.Infow("Event", logKeysAndValues...)
-
-			promEvents.WithLabelValues(rpc.Name(), contract.Name(), log.Address.Hex(), event.Name).Inc()
 		}
 	}
+}
+
+func parseArgumentValues(log types.Log, abi ethabi.ABI, args ethabi.Arguments, logName, chainName, contractName string) (map[string]interface{}, error) {
+	dataValues := make(map[string]interface{})
+	if err := abi.UnpackIntoMap(dataValues, logName, log.Data); err != nil {
+		return nil, err
+	}
+
+	topicValues := make(map[string]interface{})
+	indexedArgs := indexedArguments(args)
+	if err := ethabi.ParseTopicsIntoMap(topicValues, indexedArgs, log.Topics[1:]); err != nil {
+		return nil, err
+	}
+
+	for k, v := range dataValues {
+		topicValues[k] = v
+	}
+
+	return topicValues, nil
+}
+
+func indexedArguments(args ethabi.Arguments) ethabi.Arguments {
+	var indexed ethabi.Arguments
+	for _, arg := range args {
+		if arg.Indexed {
+			indexed = append(indexed, arg)
+		}
+	}
+	return indexed
 }

@@ -30,7 +30,7 @@ type app struct {
 }
 
 func NewApp(configPath string) App {
-	zapLogger, _ := zap.NewDevelopment()
+	zapLogger, _ := zap.NewProduction()
 	logger := zapLogger.Sugar()
 
 	logger.Debugf("Loading config from %s...", configPath)
@@ -79,18 +79,23 @@ func (a *app) Run() {
 	g, gctx := errgroup.WithContext(ctx)
 	a.ctx = gctx
 
-	handler := NewLogHandler(a.logger.Named("handler"))
-	chains := NewChains(a.config, a.logger.Named("rpc"), a.contracts, handler)
+	outputs := NewOutputs()
+	outputs.Add(NewLoggerOutput(a.logger))
 
-	db := NewDatabase()
+	handler := NewLogHandler(a.logger.Named("handler"), outputs)
+	chains := NewChains(a.config, a.logger.Named("chains"), a.contracts, handler)
+
+	db := NewDatabase(a.logger.Named("db"))
 	if err := db.Connect(ctx, a.config.Postgres.URL); err != nil {
 		a.logger.Fatalw("Failed to connect Postgres", "url", a.config.Postgres.URL)
 	}
 	defer db.Close(ctx)
 
-	if err := db.MigrateSchema(ctx, chains, a.contracts); err != nil {
+	if err := db.MigrateSchema(ctx, chains); err != nil {
 		a.logger.Fatalw("Database.CreateSchemas failed", "err", err)
 	}
+
+	outputs.Add(db)
 
 	for _, chain := range chains {
 		chain := chain

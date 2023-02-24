@@ -3,6 +3,7 @@ package app
 import (
 	"os"
 
+	"github.com/ethereum/go-ethereum/common"
 	"gopkg.in/yaml.v3"
 )
 
@@ -15,8 +16,8 @@ type ServerConfig struct {
 }
 
 type ContractConfig struct {
-	ABI       string   `yaml:"abi"`
-	Addresses []string `yaml:"addresses"`
+	ABI       string           `yaml:"abi"`
+	Addresses []common.Address `yaml:"addresses"`
 }
 
 type ChainConfig struct {

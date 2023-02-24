@@ -16,20 +16,22 @@ import (
 
 type Chain interface {
 	Name() string
+	Contracts() []Contract
 	RunLoop(ctx context.Context)
 }
 
 type shared struct {
-	logger     *zap.SugaredLogger
-	handler    LogHandler
-	addresses  []common.Address
-	addressMap map[common.Address]Contract
+	logger  *zap.SugaredLogger
+	handler LogHandler
 }
 
 type chain struct {
-	name   string
-	rpc    string
-	shared *shared
+	name       string
+	rpc        string
+	contracts  []Contract
+	addresses  []common.Address
+	addressMap map[common.Address]Contract
+	shared     *shared
 }
 
 var (
@@ -50,29 +52,35 @@ var (
 )
 
 func NewChains(config *Config, logger *zap.SugaredLogger, contracts []Contract, handler LogHandler) []Chain {
-	var addresses []common.Address
-	addressMap := make(map[common.Address]Contract)
-
-	for _, contract := range contracts {
-		for _, address := range contract.Addresses() {
-			addresses = append(addresses, address)
-			addressMap[address] = contract
-		}
-	}
-
 	shared := &shared{
-		logger:     logger,
-		handler:    handler,
-		addresses:  addresses,
-		addressMap: addressMap,
+		logger:  logger,
+		handler: handler,
 	}
 
 	var chains []Chain
 	for chainName, chainConfig := range config.Chains {
+		var chainContracts []Contract
+		var addresses []common.Address
+		addressMap := make(map[common.Address]Contract)
+
+		for _, contract := range contracts {
+			if contract.Chain() != chainName {
+				continue
+			}
+			for _, address := range contract.Addresses() {
+				addresses = append(addresses, address)
+				addressMap[address] = contract
+			}
+			chainContracts = append(chainContracts, contract)
+		}
+
 		chain := &chain{
-			name:   chainName,
-			rpc:    chainConfig.RPC,
-			shared: shared,
+			name:       chainName,
+			rpc:        chainConfig.RPC,
+			contracts:  chainContracts,
+			addresses:  addresses,
+			addressMap: addressMap,
+			shared:     shared,
 		}
 		chains = append(chains, chain)
 	}
@@ -83,8 +91,8 @@ func (c chain) Name() string {
 	return c.name
 }
 
-func (c chain) URL() string {
-	return c.rpc
+func (c chain) Contracts() []Contract {
+	return c.contracts
 }
 
 func (c chain) RunLoop(ctx context.Context) {
@@ -102,7 +110,7 @@ func (c chain) RunLoop(ctx context.Context) {
 
 			func() {
 				q := ethereum.FilterQuery{
-					Addresses: c.shared.addresses,
+					Addresses: c.addresses,
 				}
 				logsCh := make(chan types.Log)
 
@@ -122,7 +130,7 @@ func (c chain) RunLoop(ctx context.Context) {
 						return
 					case log := <-logsCh:
 						promLogsReceived.WithLabelValues(c.name).Inc()
-						contract := c.shared.addressMap[log.Address]
+						contract := c.addressMap[log.Address]
 						c.shared.handler.Handle(ctx, c, log, contract)
 					}
 				}

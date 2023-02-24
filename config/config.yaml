@@ -8,3 +8,7 @@ chains:
         abi: "LINK.abi"
         addresses:
           - "0x326C977E6efc84E512bB9C30f76E30c160eD06FB"
+      foobar:
+        abi: "FooBar.abi"
+        addresses:
+          - "0x1F2a6E94D518f66d48127ae6D0DBFAD9D12afaDB"
