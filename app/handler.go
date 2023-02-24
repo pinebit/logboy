@@ -53,7 +53,7 @@ func (h logHandler) Handle(ctx context.Context, chain Chain, log types.Log, cont
 	}
 }
 
-func parseArgumentValues(log types.Log, abi ethabi.ABI, args ethabi.Arguments, logName, chainName, contractName string) (map[string]interface{}, error) {
+func parseArgumentValues(log types.Log, abi *ethabi.ABI, args ethabi.Arguments, logName, chainName, contractName string) (map[string]interface{}, error) {
 	dataValues := make(map[string]interface{})
 	if err := abi.UnpackIntoMap(dataValues, logName, log.Data); err != nil {
 		return nil, err

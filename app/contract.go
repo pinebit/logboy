@@ -8,18 +8,18 @@ import (
 type Contract interface {
 	Chain() string
 	Name() string
-	ABI() abi.ABI
+	ABI() *abi.ABI
 	Addresses() []common.Address
 }
 
 type contract struct {
 	chain     string
 	name      string
-	abi       abi.ABI
+	abi       *abi.ABI
 	addresses []common.Address
 }
 
-func NewContract(chain, name string, abi abi.ABI, addresses []common.Address) Contract {
+func NewContract(chain, name string, abi *abi.ABI, addresses []common.Address) Contract {
 	return &contract{
 		chain:     chain,
 		name:      name,
@@ -32,7 +32,7 @@ func (c contract) Addresses() []common.Address {
 	return c.addresses
 }
 
-func (c contract) ABI() abi.ABI {
+func (c contract) ABI() *abi.ABI {
 	return c.abi
 }
 

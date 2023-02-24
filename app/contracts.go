@@ -25,19 +25,26 @@ var (
 
 func LoadContracts(config *Config, basePath string) ([]Contract, error) {
 	var contracts []Contract
+	abiCache := make(map[string]*ethabi.ABI)
 
 	for chainName, chainConfig := range config.Chains {
 		for contractName, contractConfig := range chainConfig.Contracts {
-			abiData, err := os.ReadFile(path.Join(basePath, contractConfig.ABI))
-			if err != nil {
-				return nil, fmt.Errorf("failed to read ABI file: %s, err: %v", contractConfig.ABI, err)
+			abiFilePath := path.Join(basePath, contractConfig.ABI)
+			if _, exists := abiCache[abiFilePath]; !exists {
+				abiData, err := os.ReadFile(abiFilePath)
+				if err != nil {
+					return nil, fmt.Errorf("failed to read ABI file: %s, err: %v", contractConfig.ABI, err)
+				}
+
+				abi, err := ethabi.JSON(strings.NewReader(string(abiData)))
+				if err != nil {
+					return nil, fmt.Errorf("failed to decode ABI: %s, err: %v", contractConfig.ABI, err)
+				}
+
+				abiCache[abiFilePath] = &abi
 			}
 
-			abi, err := ethabi.JSON(strings.NewReader(string(abiData)))
-			if err != nil {
-				return nil, fmt.Errorf("failed to decode ABI: %s, err: %v", contractConfig.ABI, err)
-			}
-
+			abi := abiCache[abiFilePath]
 			promConfiguredEvents.WithLabelValues(chainName, contractName).Add(float64(len(abi.Events)))
 			promConfiguredAddresses.WithLabelValues(chainName, contractName).Add(float64(len(contractConfig.Addresses)))
 
