@@ -95,7 +95,7 @@ func (d database) MigrateSchema(ctx context.Context, chains []Chain) error {
 
 		for _, contract := range chain.Contracts() {
 			columns := `id BIGSERIAL PRIMARY KEY,
-						timestamp TIMESTAMP NOT NULL,
+						ts TIMESTAMP WITHOUT TIME ZONE default (now() at time zone 'utc'),
 						tx_hash TEXT NOT NULL,
 						tx_index NUMERIC NOT NULL,
 						block_number NUMERIC NOT NULL,
@@ -129,7 +129,7 @@ func (d database) insertRecord(ctx context.Context, tableName string, log types.
 	if err != nil {
 		d.logger.Errorw("DB failed marshal jsonb", "err", err)
 	} else {
-		q := fmt.Sprintf("INSERT INTO %s (timestamp, tx_hash, tx_index, block_number, address, event, args) VALUES (now(), $1, $2, $3, $4, $5, $6)", tableName)
+		q := fmt.Sprintf("INSERT INTO %s (tx_hash, tx_index, block_number, address, event, args) VALUES ($1, $2, $3, $4, $5, $6)", tableName)
 		_, err = d.db.ExecContext(ctx, q, log.TxHash.Hex(), log.TxIndex, log.BlockNumber, log.Address.Hex(), event, jsonb)
 		if err != nil {
 			promDBErrors.WithLabelValues(tableName).Inc()
