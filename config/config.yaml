@@ -3,9 +3,24 @@ server:
 postgres:
   url: $POSTGRES_URL
 chains:
+  eth_mainnet:
+    rpc: $ETH_MAINNET_RPC_URL
+    contracts:
+      usdc:
+        abi: "USDC.abi"
+        addresses:
+          - "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
+      link:
+        abi: "LINK.abi"
+        addresses:
+          - "0x514910771AF9Ca656af840dff83E8264EcF986CA"
   polygon:
     rpc: $POLYGON_RPC_URL
     contracts:
+      usdc:
+        abi: "USDC.abi"
+        addresses:
+          - "0x2791bca1f2de4661ed88a30c99a7a9449aa84174"
       link:
         abi: "LINK.abi"
         addresses:
