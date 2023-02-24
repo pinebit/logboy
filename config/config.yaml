@@ -1,14 +1,10 @@
 postgres:
   url: $POSTGRES_URL
 chains:
-  polygon_mumbai:
-    rpc: $MUMBAI_RPC_URL
+  polygon:
+    rpc: $POLYGON_RPC_URL
     contracts:
       link:
         abi: "LINK.abi"
         addresses:
-          - "0x326C977E6efc84E512bB9C30f76E30c160eD06FB"
-      foobar:
-        abi: "FooBar.abi"
-        addresses:
-          - "0x1F2a6E94D518f66d48127ae6D0DBFAD9D12afaDB"
+          - "0x53E0bca35eC356BD5ddDFebbD1Fc0fD03FaBad39"

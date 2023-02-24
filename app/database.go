@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
@@ -38,6 +39,11 @@ var (
 	promDBInserts = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "lognite_db_inserts",
 		Help: "The total number of DB inserts per table",
+	}, []string{"table"})
+
+	promDBDrops = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "lognite_db_drops",
+		Help: "The total number of DB drops per table",
 	}, []string{"table"})
 )
 
@@ -94,7 +100,6 @@ func (d database) MigrateSchema(ctx context.Context, chains []Chain) error {
 						tx_index NUMERIC NOT NULL,
 						block_number NUMERIC NOT NULL,
 						address TEXT NOT NULL,
-						removed BOOL NOT NULL,
 						event TEXT NOT NULL,
 						args JSONB NOT NULL`
 			q := fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (%s);", eventsTableQN(contract), columns)
@@ -112,18 +117,37 @@ func (d database) MigrateSchema(ctx context.Context, chains []Chain) error {
 
 func (d database) Write(ctx context.Context, log types.Log, contract Contract, event string, args map[string]interface{}) {
 	tableName := eventsTableQN(contract)
+	if log.Removed {
+		d.removeRecords(ctx, tableName, log.TxHash)
+	} else {
+		d.insertRecord(ctx, tableName, log, event, args)
+	}
+}
+
+func (d database) insertRecord(ctx context.Context, tableName string, log types.Log, event string, args map[string]interface{}) {
 	jsonb, err := json.Marshal(args)
 	if err != nil {
 		d.logger.Errorw("DB failed marshal jsonb", "err", err)
 	} else {
-		q := fmt.Sprintf("INSERT INTO %s (timestamp, tx_hash, tx_index, block_number, address, removed, event, args) VALUES (now(), $1, $2, $3, $4, $5, $6, $7)", tableName)
-		_, err = d.db.ExecContext(ctx, q, log.TxHash.Hex(), log.TxIndex, log.BlockNumber, log.Address.Hex(), log.Removed, event, jsonb)
+		q := fmt.Sprintf("INSERT INTO %s (timestamp, tx_hash, tx_index, block_number, address, event, args) VALUES (now(), $1, $2, $3, $4, $5, $6)", tableName)
+		_, err = d.db.ExecContext(ctx, q, log.TxHash.Hex(), log.TxIndex, log.BlockNumber, log.Address.Hex(), event, jsonb)
 		if err != nil {
 			promDBErrors.WithLabelValues(tableName).Inc()
 			d.logger.Errorw("DB failed to insert", "err", err, "q", q)
 		} else {
 			promDBInserts.WithLabelValues(tableName).Inc()
 		}
+	}
+}
+
+func (d database) removeRecords(ctx context.Context, tableName string, txHash common.Hash) {
+	q := fmt.Sprintf("DROP FROM %s WHERE tx_hash=%s", tableName, txHash.Hex())
+	_, err := d.db.ExecContext(ctx, q)
+	if err != nil {
+		promDBErrors.WithLabelValues(tableName).Inc()
+		d.logger.Errorw("DB failed to drop", "err", err, "q", q)
+	} else {
+		promDBDrops.WithLabelValues(tableName).Inc()
 	}
 }
 

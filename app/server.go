@@ -33,7 +33,12 @@ func (s *server) Run() error {
 
 	g.Go(func() error {
 		logger.Debugf("Listening on port %s", s.httpServer.Addr)
+
 		http.Handle("/metrics", promhttp.Handler())
+		http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+			_, _ = w.Write([]byte("ok"))
+		})
+
 		err := s.httpServer.ListenAndServe()
 		if err == http.ErrServerClosed {
 			return nil
