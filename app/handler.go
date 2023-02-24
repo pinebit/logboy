@@ -24,7 +24,7 @@ var (
 	promEvents = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "lognite_events",
 		Help: "The total number of events per contract, address and event name",
-	}, []string{"rpc", "contractName", "contractAddress", "eventName"})
+	}, []string{"chainName", "contractName", "contractAddress", "eventName"})
 )
 
 func NewLogHandler(logger *zap.SugaredLogger, outputs Outputs) LogHandler {

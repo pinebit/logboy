@@ -9,6 +9,8 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.uber.org/zap"
 )
 
@@ -27,6 +29,16 @@ type database struct {
 
 var (
 	errDatabaseClosed = errors.New("database is closed")
+
+	promDBErrors = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "lognite_db_errors",
+		Help: "The total number of DB errors per table",
+	}, []string{"table"})
+
+	promDBInserts = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "lognite_db_inserts",
+		Help: "The total number of DB inserts per table",
+	}, []string{"table"})
 )
 
 func NewDatabase(logger *zap.SugaredLogger) Database {
@@ -99,14 +111,18 @@ func (d database) MigrateSchema(ctx context.Context, chains []Chain) error {
 }
 
 func (d database) Write(ctx context.Context, log types.Log, contract Contract, event string, args map[string]interface{}) {
+	tableName := eventsTableQN(contract)
 	jsonb, err := json.Marshal(args)
 	if err != nil {
 		d.logger.Errorw("DB failed marshal jsonb", "err", err)
 	} else {
-		q := fmt.Sprintf("INSERT INTO %s (timestamp, tx_hash, tx_index, block_number, address, removed, event, args) VALUES (now(), $1, $2, $3, $4, $5, $6, $7)", eventsTableQN(contract))
+		q := fmt.Sprintf("INSERT INTO %s (timestamp, tx_hash, tx_index, block_number, address, removed, event, args) VALUES (now(), $1, $2, $3, $4, $5, $6, $7)", tableName)
 		_, err = d.db.ExecContext(ctx, q, log.TxHash.Hex(), log.TxIndex, log.BlockNumber, log.Address.Hex(), log.Removed, event, jsonb)
 		if err != nil {
+			promDBErrors.WithLabelValues(tableName).Inc()
 			d.logger.Errorw("DB failed to insert", "err", err, "q", q)
+		} else {
+			promDBInserts.WithLabelValues(tableName).Inc()
 		}
 	}
 }
