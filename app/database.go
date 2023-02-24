@@ -77,8 +77,10 @@ func (d database) MigrateSchema(ctx context.Context, chains []Chain) error {
 
 		for _, contract := range chain.Contracts() {
 			columns := `id BIGSERIAL PRIMARY KEY,
-						block_ts TIMESTAMP NOT NULL,
+						timestamp TIMESTAMP NOT NULL,
 						tx_hash TEXT NOT NULL,
+						tx_index NUMERIC NOT NULL,
+						block_number NUMERIC NOT NULL,
 						address TEXT NOT NULL,
 						removed BOOL NOT NULL,
 						event TEXT NOT NULL,
@@ -101,8 +103,8 @@ func (d database) Write(ctx context.Context, log types.Log, contract Contract, e
 	if err != nil {
 		d.logger.Errorw("DB failed marshal jsonb", "err", err)
 	} else {
-		q := fmt.Sprintf("INSERT INTO %s (block_ts, tx_hash, address, removed, event, args) VALUES (now(), $1, $2, $3, $4, $5)", eventsTableQN(contract))
-		_, err = d.db.ExecContext(ctx, q, log.TxHash.Hex(), log.Address.Hex(), log.Removed, event, jsonb)
+		q := fmt.Sprintf("INSERT INTO %s (timestamp, tx_hash, tx_index, block_number, address, removed, event, args) VALUES (now(), $1, $2, $3, $4, $5, $6, $7)", eventsTableQN(contract))
+		_, err = d.db.ExecContext(ctx, q, log.TxHash.Hex(), log.TxIndex, log.BlockNumber, log.Address.Hex(), log.Removed, event, jsonb)
 		if err != nil {
 			d.logger.Errorw("DB failed to insert", "err", err, "q", q)
 		}
