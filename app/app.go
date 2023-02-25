@@ -63,7 +63,7 @@ func (a *app) Start() {
 	}
 
 	if a.config.Outputs.Postgres != nil {
-		db := NewDatabase(a.logger)
+		db := NewDatabase(a.logger, a.config.Outputs.Postgres)
 		if err := db.Connect(ctx, a.config.Outputs.Postgres.URL); err != nil {
 			a.logger.Fatalw("Failed to connect Postgres", "url", a.config.Outputs.Postgres.URL)
 		}

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
@@ -22,19 +23,23 @@ type Database interface {
 }
 
 type database struct {
-	db     *sqlx.DB
-	logger *zap.SugaredLogger
-	queue  chan *Event
+	db        *sqlx.DB
+	logger    *zap.SugaredLogger
+	queue     chan *Event
+	retention time.Duration
+	lastPrune time.Time
 }
 
 var (
 	errDatabaseClosed = errors.New("database is closed")
 )
 
-func NewDatabase(logger *zap.SugaredLogger) Database {
+func NewDatabase(logger *zap.SugaredLogger, config *PostgresConfig) Database {
 	return &database{
-		logger: logger.Named("database"),
-		queue:  make(chan *Event, defaultOutputBuffer),
+		logger:    logger.Named("database"),
+		queue:     make(chan *Event, defaultOutputBuffer),
+		retention: *config.Retention,
+		lastPrune: time.Now().Add(-defaultPostgresPruneInterval),
 	}
 }
 
@@ -136,6 +141,7 @@ func (d database) handleEvent(ctx context.Context, event *Event) {
 	} else {
 		d.insertRecord(ctx, tableName, event)
 	}
+	d.pruneEvents(ctx, tableName)
 }
 
 func (d database) createIndex(ctx context.Context, tx *sql.Tx, contract Contract, column string) error {
@@ -161,13 +167,26 @@ func (d database) insertRecord(ctx context.Context, tableName string, event *Eve
 }
 
 func (d database) removeRecords(ctx context.Context, tableName string, blockNumber uint64) {
-	q := fmt.Sprintf("DROP FROM %s WHERE block_number=%d", tableName, blockNumber)
+	q := fmt.Sprintf("DELETE FROM %s WHERE block_number=%d", tableName, blockNumber)
 	_, err := d.db.ExecContext(ctx, q)
 	if err != nil {
 		promDBErrors.WithLabelValues(tableName).Inc()
 		d.logger.Errorw("DB failed to drop", "err", err, "q", q)
 	} else {
 		promDBDrops.WithLabelValues(tableName).Inc()
+	}
+}
+
+func (d *database) pruneEvents(ctx context.Context, tableName string) {
+	if time.Since(d.lastPrune) < defaultPostgresPruneInterval {
+		return
+	}
+	d.lastPrune = time.Now()
+	hours := uint(d.retention.Hours())
+	q := fmt.Sprintf("DELETE FROM %s WHERE ts < (now() at time zone 'utc') - '%d hours'::interval;", tableName, hours)
+	_, err := d.db.ExecContext(ctx, q)
+	if err != nil {
+		d.logger.Errorw("DB failed to drop", "err", err, "q", q)
 	}
 }
 

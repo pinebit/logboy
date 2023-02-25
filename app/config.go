@@ -6,6 +6,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"gopkg.in/yaml.v3"
@@ -16,7 +17,8 @@ type ConsoleConfig struct {
 }
 
 type PostgresConfig struct {
-	URL string `yaml:"url"`
+	URL       string         `yaml:"url"`
+	Retention *time.Duration `yaml:"retention"`
 }
 
 type ServerConfig struct {
@@ -60,6 +62,11 @@ func LoadConfigJSON(jsonPath string) (*Config, error) {
 
 	if config.Server.Port == 0 {
 		config.Server.Port = defaultServerPort
+	}
+
+	if config.Outputs.Postgres != nil && config.Outputs.Postgres.Retention == nil {
+		retention := defaultPostgresRetention
+		config.Outputs.Postgres.Retention = &retention
 	}
 
 	if err := validateConfig(config); err != nil {
@@ -108,8 +115,13 @@ func validateConfig(config *Config) error {
 		}
 	}
 
-	if config.Outputs.Postgres != nil && len(config.Outputs.Postgres.URL) == 0 {
-		return errors.New("'outputs.postgres' has no 'url' specified")
+	if config.Outputs.Postgres != nil {
+		if len(config.Outputs.Postgres.URL) == 0 {
+			return errors.New("'outputs.postgres' has no 'url' specified")
+		}
+		if *config.Outputs.Postgres.Retention < time.Hour {
+			return errors.New("'outputs.postgres.retention' must be longer than 1h")
+		}
 	}
 
 	return nil

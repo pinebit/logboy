@@ -20,3 +20,4 @@ chains:
 outputs:
   postgres:
     url: $POSTGRES_URL
+    retention: "4h"
