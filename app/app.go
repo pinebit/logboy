@@ -80,22 +80,26 @@ func (a *app) Run() {
 	a.ctx = gctx
 
 	outputs := NewOutputs()
-	outputs.Add(NewLoggerOutput(a.logger))
+	if a.config.Outputs.Console == nil || !a.config.Outputs.Console.Disabled {
+		outputs.Add(NewLoggerOutput(a.logger))
+	}
 
 	handler := NewLogHandler(a.logger.Named("handler"), outputs)
 	chains := NewChains(a.config, a.logger.Named("chains"), a.contracts, handler)
 
-	db := NewDatabase(a.logger.Named("db"))
-	if err := db.Connect(ctx, a.config.Postgres.URL); err != nil {
-		a.logger.Fatalw("Failed to connect Postgres", "url", a.config.Postgres.URL)
-	}
-	defer db.Close(ctx)
+	if a.config.Outputs.Postgres != nil {
+		db := NewDatabase(a.logger.Named("db"))
+		if err := db.Connect(ctx, a.config.Outputs.Postgres.URL); err != nil {
+			a.logger.Fatalw("Failed to connect Postgres", "url", a.config.Outputs.Postgres.URL)
+		}
+		defer db.Close(ctx)
 
-	if err := db.MigrateSchema(ctx, chains); err != nil {
-		a.logger.Fatalw("Database.CreateSchemas failed", "err", err)
-	}
+		if err := db.MigrateSchema(ctx, chains); err != nil {
+			a.logger.Fatalw("Database.CreateSchemas failed", "err", err)
+		}
 
-	outputs.Add(db)
+		outputs.Add(db)
+	}
 
 	for _, chain := range chains {
 		chain := chain
