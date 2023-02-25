@@ -15,9 +15,10 @@ import (
 )
 
 type Chain interface {
+	Service
+
 	Name() string
 	Contracts() []Contract
-	RunLoop(ctx context.Context)
 }
 
 type shared struct {
@@ -64,7 +65,7 @@ func NewChains(config *Config, logger *zap.SugaredLogger, contracts []Contract, 
 		addressMap := make(map[common.Address]Contract)
 
 		for _, contract := range contracts {
-			if contract.Chain() != chainName {
+			if contract.ChainName() != chainName {
 				continue
 			}
 			for _, address := range contract.Addresses() {
@@ -95,7 +96,7 @@ func (c chain) Contracts() []Contract {
 	return c.contracts
 }
 
-func (c chain) RunLoop(ctx context.Context) {
+func (c chain) Run(ctx context.Context) error {
 	logger := c.shared.logger.Named(c.name)
 
 	for {
@@ -141,7 +142,7 @@ func (c chain) RunLoop(ctx context.Context) {
 		promConnections.WithLabelValues(c.name).Dec()
 
 		if errors.Is(ctx.Err(), context.Canceled) {
-			return
+			return ctx.Err()
 		}
 
 		time.Sleep(time.Second)

@@ -6,23 +6,23 @@ import (
 )
 
 type Contract interface {
-	Chain() string
+	ChainName() string
 	Name() string
 	ABI() *abi.ABI
 	Addresses() []common.Address
 }
 
 type contract struct {
-	chain     string
+	chainName string
 	name      string
 	abi       *abi.ABI
 	addresses []common.Address
 }
 
-func NewContract(chain, name string, abi *abi.ABI, addresses []common.Address) Contract {
+func NewContract(chainName, contractName string, abi *abi.ABI, addresses []common.Address) Contract {
 	return &contract{
-		chain:     chain,
-		name:      name,
+		chainName: chainName,
+		name:      contractName,
 		abi:       abi,
 		addresses: addresses,
 	}
@@ -40,6 +40,6 @@ func (c contract) Name() string {
 	return c.name
 }
 
-func (c contract) Chain() string {
-	return c.chain
+func (c contract) ChainName() string {
+	return c.chainName
 }

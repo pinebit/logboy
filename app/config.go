@@ -100,8 +100,6 @@ func validateConfig(config *Config) error {
 				return fmt.Errorf("chain '%s' contract '%s' has no 'abi' specified", chainName, contractName)
 			}
 			if contract.Address != zeroAddress && len(contract.Addresses) != 0 {
-				fmt.Println(contract.Address)
-				fmt.Println(contract.Addresses)
 				return fmt.Errorf("chain '%s' contract '%s' has both 'address' and 'addresses' specified", chainName, contractName)
 			}
 			if contract.Address == zeroAddress && len(contract.Addresses) == 0 {

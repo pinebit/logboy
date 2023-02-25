@@ -152,5 +152,5 @@ func (d database) removeRecords(ctx context.Context, tableName string, txHash co
 }
 
 func eventsTableQN(contract Contract) string {
-	return fmt.Sprintf("%s.%s_events", contract.Chain(), contract.Name())
+	return fmt.Sprintf("%s.%s_events", contract.ChainName(), contract.Name())
 }

@@ -50,7 +50,7 @@ func NewLoggerOutput(logger *zap.SugaredLogger) Output {
 
 func (o loggerOutput) Write(ctx context.Context, log types.Log, contract Contract, event string, args map[string]interface{}) {
 	var logKeysAndValues []interface{}
-	logKeysAndValues = append(logKeysAndValues, ".chainName", contract.Chain())
+	logKeysAndValues = append(logKeysAndValues, ".chainName", contract.ChainName())
 	logKeysAndValues = append(logKeysAndValues, ".contractName", contract.Name())
 	logKeysAndValues = append(logKeysAndValues, ".contractAddress", log.Address)
 	logKeysAndValues = append(logKeysAndValues, ".name", event)

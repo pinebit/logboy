@@ -15,15 +15,7 @@ type App interface {
 	Close()
 }
 
-type AppContext interface {
-	Context() context.Context
-	Logger(name string) *zap.SugaredLogger
-	Config() *Config
-	Contracts() []Contract
-}
-
 type app struct {
-	ctx       context.Context
 	logger    *zap.SugaredLogger
 	config    *Config
 	contracts []Contract
@@ -52,22 +44,6 @@ func NewApp(configPath string) App {
 	}
 }
 
-func (a app) Context() context.Context {
-	return a.ctx
-}
-
-func (a app) Logger(name string) *zap.SugaredLogger {
-	return a.logger.Named(name)
-}
-
-func (a app) Config() *Config {
-	return a.config
-}
-
-func (a app) Contracts() []Contract {
-	return a.contracts
-}
-
 func (a app) Close() {
 	a.logger.Sync()
 }
@@ -77,7 +53,6 @@ func (a *app) Run() {
 	go ShutdownHandler(cancel)
 
 	g, gctx := errgroup.WithContext(ctx)
-	a.ctx = gctx
 
 	outputs := NewOutputs()
 	if a.config.Outputs.Console == nil || !a.config.Outputs.Console.Disabled {
@@ -105,13 +80,14 @@ func (a *app) Run() {
 		chain := chain
 
 		g.Go(func() error {
-			chain.RunLoop(gctx)
-			return nil
+			return chain.Run(gctx)
 		})
 	}
 
-	s := NewServer(a)
-	g.Go(s.Run)
+	server := NewServer(&a.config.Server, a.logger)
+	g.Go(func() error {
+		return server.Run(gctx)
+	})
 
 	if err := g.Wait(); err != nil {
 		a.logger.Fatalf("Application error: %v", err)
