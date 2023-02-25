@@ -3,12 +3,11 @@ package app
 import (
 	"sync"
 
-	"github.com/ethereum/go-ethereum/core/types"
 	"go.uber.org/zap"
 )
 
 type Output interface {
-	Write(log types.Log, contract Contract, event string, args map[string]interface{})
+	Write(event *Event)
 }
 
 type Outputs interface {
@@ -47,15 +46,15 @@ func NewLoggerOutput(logger *zap.SugaredLogger) Output {
 	}
 }
 
-func (o loggerOutput) Write(log types.Log, contract Contract, event string, args map[string]interface{}) {
+func (o loggerOutput) Write(event *Event) {
 	var logKeysAndValues []interface{}
-	logKeysAndValues = append(logKeysAndValues, ".chainName", contract.ChainName())
-	logKeysAndValues = append(logKeysAndValues, ".contractName", contract.Name())
-	logKeysAndValues = append(logKeysAndValues, ".contractAddress", log.Address)
-	logKeysAndValues = append(logKeysAndValues, ".name", event)
-	logKeysAndValues = append(logKeysAndValues, ".removed", log.Removed)
+	logKeysAndValues = append(logKeysAndValues, ".chainName", event.Contract.ChainName())
+	logKeysAndValues = append(logKeysAndValues, ".contractName", event.Contract.Name())
+	logKeysAndValues = append(logKeysAndValues, ".contractAddress", event.Log.Address)
+	logKeysAndValues = append(logKeysAndValues, ".name", event.Name)
+	logKeysAndValues = append(logKeysAndValues, ".removed", event.Log.Removed)
 
-	for ak, av := range args {
+	for ak, av := range event.Args {
 		logKeysAndValues = append(logKeysAndValues, ak, av)
 	}
 

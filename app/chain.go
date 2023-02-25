@@ -10,8 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/jpillora/backoff"
 	"go.uber.org/zap"
 )
 
@@ -28,28 +27,6 @@ type chain struct {
 	logger     *zap.SugaredLogger
 	outputs    Outputs
 }
-
-var (
-	promConnections = promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "lognite_rpc_alive_connections",
-		Help: "The current number of alive RPC connections per chain",
-	}, []string{"chainName"})
-
-	promReConnections = promauto.NewCounterVec(prometheus.CounterOpts{
-		Name: "lognite_rpc_reconnections",
-		Help: "The total number of RPC reconnections per chain",
-	}, []string{"chainName"})
-
-	promLogsReceived = promauto.NewCounterVec(prometheus.CounterOpts{
-		Name: "lognite_logs_received",
-		Help: "The total number of received logs per chain",
-	}, []string{"chainName"})
-
-	promEvents = promauto.NewCounterVec(prometheus.CounterOpts{
-		Name: "lognite_events",
-		Help: "The total number of events per contract, address and event name",
-	}, []string{"chainName", "contractName", "contractAddress", "eventName"})
-)
 
 func NewChain(name string, config *Config, contracts []Contract, logger *zap.SugaredLogger, outputs Outputs) Chain {
 	var addresses []common.Address
@@ -74,6 +51,8 @@ func NewChain(name string, config *Config, contracts []Contract, logger *zap.Sug
 }
 
 func (c chain) Run(ctx context.Context) error {
+	backoff := backoff.Backoff{}
+
 	for {
 		promReConnections.WithLabelValues(c.name).Inc()
 
@@ -83,6 +62,7 @@ func (c chain) Run(ctx context.Context) error {
 		} else {
 			c.logger.Debugw("RPC connected", "url", c.rpc)
 			promConnections.WithLabelValues(c.name).Inc()
+			backoff.Reset()
 
 			func() {
 				q := ethereum.FilterQuery{
@@ -120,7 +100,7 @@ func (c chain) Run(ctx context.Context) error {
 			return ctx.Err()
 		}
 
-		time.Sleep(time.Second)
+		time.Sleep(backoff.Duration())
 	}
 }
 
@@ -136,8 +116,9 @@ func (c chain) handle(log types.Log, contract Contract) {
 		} else {
 			promEvents.WithLabelValues(c.name, contract.Name(), log.Address.Hex(), event.Name).Inc()
 
+			eventData := NewEvent(event.Name, log, contract, args)
 			for _, output := range c.outputs.GetAll() {
-				output.Write(log, contract, event.Name, args)
+				output.Write(eventData)
 			}
 		}
 	}

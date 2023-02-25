@@ -8,20 +8,6 @@ import (
 
 	ethabi "github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
-)
-
-var (
-	promConfiguredEvents = promauto.NewCounterVec(prometheus.CounterOpts{
-		Name: "lognite_configured_events",
-		Help: "The total number of events configured per chain and contract",
-	}, []string{"chainName", "contractName"})
-
-	promConfiguredAddresses = promauto.NewCounterVec(prometheus.CounterOpts{
-		Name: "lognite_configured_addresses",
-		Help: "The total number of addresses configured per chain and contract",
-	}, []string{"chainName", "contractName"})
 )
 
 func LoadContracts(config *Config, basePath string) (map[string][]Contract, error) {

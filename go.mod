@@ -6,6 +6,7 @@ require (
 	github.com/ethereum/go-ethereum v1.11.1
 	github.com/jmoiron/sqlx v1.3.5
 	github.com/joho/godotenv v1.5.1
+	github.com/jpillora/backoff v1.0.0
 	github.com/lib/pq v1.10.7
 	github.com/prometheus/client_golang v1.14.0
 	go.uber.org/zap v1.24.0

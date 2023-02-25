@@ -2,20 +2,18 @@ package app
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.uber.org/zap"
 )
 
 type Database interface {
+	Service
 	Output
 
 	Connect(ctx context.Context, url string) error
@@ -26,30 +24,17 @@ type Database interface {
 type database struct {
 	db     *sqlx.DB
 	logger *zap.SugaredLogger
+	queue  chan *Event
 }
 
 var (
 	errDatabaseClosed = errors.New("database is closed")
-
-	promDBErrors = promauto.NewCounterVec(prometheus.CounterOpts{
-		Name: "lognite_db_errors",
-		Help: "The total number of DB errors per table",
-	}, []string{"table"})
-
-	promDBInserts = promauto.NewCounterVec(prometheus.CounterOpts{
-		Name: "lognite_db_inserts",
-		Help: "The total number of DB inserts per table",
-	}, []string{"table"})
-
-	promDBDrops = promauto.NewCounterVec(prometheus.CounterOpts{
-		Name: "lognite_db_drops",
-		Help: "The total number of DB drops per table",
-	}, []string{"table"})
 )
 
 func NewDatabase(logger *zap.SugaredLogger) Database {
 	return &database{
 		logger: logger.Named("database"),
+		queue:  make(chan *Event, defaultOutputBuffer),
 	}
 }
 
@@ -67,12 +52,27 @@ func (d *database) Connect(ctx context.Context, url string) error {
 
 func (d *database) Close(ctx context.Context) error {
 	if d.db != nil {
+		close(d.queue)
 		if err := d.db.Close(); err != nil {
 			return err
 		}
 		d.db = nil
 	}
 	return nil
+}
+
+func (d database) Run(ctx context.Context) (err error) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case event, ok := <-d.queue:
+			if !ok {
+				return
+			}
+			d.handleEvent(ctx, event)
+		}
+	}
 }
 
 func (d database) MigrateSchema(ctx context.Context, contracts map[string][]Contract) error {
@@ -94,7 +94,8 @@ func (d database) MigrateSchema(ctx context.Context, contracts map[string][]Cont
 		}
 
 		for _, contract := range chainContracts {
-			columns := `id BIGSERIAL PRIMARY KEY,
+			tableName := eventsTableQN(contract)
+			schema := `id BIGSERIAL PRIMARY KEY,
 						ts TIMESTAMP WITHOUT TIME ZONE default (now() at time zone 'utc'),
 						tx_hash TEXT NOT NULL,
 						tx_index NUMERIC NOT NULL,
@@ -102,12 +103,21 @@ func (d database) MigrateSchema(ctx context.Context, contracts map[string][]Cont
 						address TEXT NOT NULL,
 						event TEXT NOT NULL,
 						args JSONB NOT NULL`
-			q := fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (%s);", eventsTableQN(contract), columns)
+			q := fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (%s);", tableName, schema)
 			_, err := tx.ExecContext(ctx, q)
 			if err != nil {
 				d.logger.Errorw("DB failed to create table", "err", err, "q", q)
 				defer tx.Rollback()
 				return err
+			}
+
+			columns := []string{"ts", "tx_hash", "block_number", "address", "event"}
+			for _, column := range columns {
+				if err := d.createIndex(ctx, tx, contract, column); err != nil {
+					d.logger.Errorw("DB failed to create index for column", "err", err, "tableName", tableName, "column", column)
+					defer tx.Rollback()
+					return err
+				}
 			}
 		}
 	}
@@ -115,22 +125,32 @@ func (d database) MigrateSchema(ctx context.Context, contracts map[string][]Cont
 	return tx.Commit()
 }
 
-func (d database) Write(log types.Log, contract Contract, event string, args map[string]interface{}) {
-	tableName := eventsTableQN(contract)
-	if log.Removed {
-		d.removeRecords(context.TODO(), tableName, log.TxHash)
+func (d database) Write(event *Event) {
+	d.queue <- event
+}
+
+func (d database) handleEvent(ctx context.Context, event *Event) {
+	tableName := eventsTableQN(event.Contract)
+	if event.Log.Removed {
+		d.removeRecords(ctx, tableName, event.Log.BlockNumber)
 	} else {
-		d.insertRecord(context.TODO(), tableName, log, event, args)
+		d.insertRecord(ctx, tableName, event)
 	}
 }
 
-func (d database) insertRecord(ctx context.Context, tableName string, log types.Log, event string, args map[string]interface{}) {
-	jsonb, err := json.Marshal(args)
+func (d database) createIndex(ctx context.Context, tx *sql.Tx, contract Contract, column string) error {
+	q := fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s_%s_idx ON %s (%s);", contract.Name(), column, eventsTableQN(contract), column)
+	_, err := tx.ExecContext(ctx, q)
+	return err
+}
+
+func (d database) insertRecord(ctx context.Context, tableName string, event *Event) {
+	jsonb, err := json.Marshal(event.Args)
 	if err != nil {
 		d.logger.Errorw("DB failed marshal jsonb", "err", err)
 	} else {
 		q := fmt.Sprintf("INSERT INTO %s (tx_hash, tx_index, block_number, address, event, args) VALUES ($1, $2, $3, $4, $5, $6)", tableName)
-		_, err = d.db.ExecContext(ctx, q, log.TxHash.Hex(), log.TxIndex, log.BlockNumber, log.Address.Hex(), event, jsonb)
+		_, err = d.db.ExecContext(ctx, q, event.Log.TxHash.Hex(), event.Log.TxIndex, event.Log.BlockNumber, event.Log.Address.Hex(), event.Name, jsonb)
 		if err != nil {
 			promDBErrors.WithLabelValues(tableName).Inc()
 			d.logger.Errorw("DB failed to insert", "err", err, "q", q)
@@ -140,8 +160,8 @@ func (d database) insertRecord(ctx context.Context, tableName string, log types.
 	}
 }
 
-func (d database) removeRecords(ctx context.Context, tableName string, txHash common.Hash) {
-	q := fmt.Sprintf("DROP FROM %s WHERE tx_hash=%s", tableName, txHash.Hex())
+func (d database) removeRecords(ctx context.Context, tableName string, blockNumber uint64) {
+	q := fmt.Sprintf("DROP FROM %s WHERE block_number=%d", tableName, blockNumber)
 	_, err := d.db.ExecContext(ctx, q)
 	if err != nil {
 		promDBErrors.WithLabelValues(tableName).Inc()

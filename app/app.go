@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"path"
 
 	"go.uber.org/zap"
@@ -49,6 +50,8 @@ func (a app) Close() {
 }
 
 func (a *app) Start() {
+	var services []Service
+
 	ctx, cancel := context.WithCancel(context.Background())
 	go ShutdownHandler(cancel)
 
@@ -70,25 +73,31 @@ func (a *app) Start() {
 			a.logger.Fatalw("Database.CreateSchemas failed", "err", err)
 		}
 
+		services = append(services, db)
 		outputs.Add(db)
 	}
 
 	for chainName, chainContracts := range a.contracts {
-		chainName := chainName
-		chainContracts := chainContracts
-
-		g.Go(func() error {
-			chain := NewChain(chainName, a.config, chainContracts, a.logger, outputs)
-			return chain.Run(gctx)
-		})
+		chain := NewChain(chainName, a.config, chainContracts, a.logger, outputs)
+		services = append(services, chain)
 	}
 
 	server := NewServer(&a.config.Server, a.logger)
-	g.Go(func() error {
-		return server.Run(gctx)
-	})
+	services = append(services, server)
+
+	for _, service := range services {
+		service := service
+
+		g.Go(func() error {
+			return service.Run(gctx)
+		})
+	}
 
 	if err := g.Wait(); err != nil {
-		a.logger.Fatalf("Application error: %v", err)
+		if !errors.Is(err, context.Canceled) {
+			a.logger.Fatalw("Application error", "err", err)
+		} else {
+			a.logger.Debug("Application is stopped gracefully.")
+		}
 	}
 }
