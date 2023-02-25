@@ -11,14 +11,14 @@ import (
 )
 
 type App interface {
-	Run()
+	Start()
 	Close()
 }
 
 type app struct {
 	logger    *zap.SugaredLogger
 	config    *Config
-	contracts []Contract
+	contracts map[string][]Contract
 }
 
 func NewApp(configPath string) App {
@@ -48,7 +48,7 @@ func (a app) Close() {
 	a.logger.Sync()
 }
 
-func (a *app) Run() {
+func (a *app) Start() {
 	ctx, cancel := context.WithCancel(context.Background())
 	go ShutdownHandler(cancel)
 
@@ -59,27 +59,26 @@ func (a *app) Run() {
 		outputs.Add(NewLoggerOutput(a.logger))
 	}
 
-	handler := NewLogHandler(a.logger.Named("handler"), outputs)
-	chains := NewChains(a.config, a.logger.Named("chains"), a.contracts, handler)
-
 	if a.config.Outputs.Postgres != nil {
-		db := NewDatabase(a.logger.Named("db"))
+		db := NewDatabase(a.logger)
 		if err := db.Connect(ctx, a.config.Outputs.Postgres.URL); err != nil {
 			a.logger.Fatalw("Failed to connect Postgres", "url", a.config.Outputs.Postgres.URL)
 		}
 		defer db.Close(ctx)
 
-		if err := db.MigrateSchema(ctx, chains); err != nil {
+		if err := db.MigrateSchema(ctx, a.contracts); err != nil {
 			a.logger.Fatalw("Database.CreateSchemas failed", "err", err)
 		}
 
 		outputs.Add(db)
 	}
 
-	for _, chain := range chains {
-		chain := chain
+	for chainName, chainContracts := range a.contracts {
+		chainName := chainName
+		chainContracts := chainContracts
 
 		g.Go(func() error {
+			chain := NewChain(chainName, a.config, chainContracts, a.logger, outputs)
 			return chain.Run(gctx)
 		})
 	}

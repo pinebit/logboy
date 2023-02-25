@@ -24,8 +24,8 @@ var (
 	}, []string{"chainName", "contractName"})
 )
 
-func LoadContracts(config *Config, basePath string) ([]Contract, error) {
-	var contracts []Contract
+func LoadContracts(config *Config, basePath string) (map[string][]Contract, error) {
+	contracts := make(map[string][]Contract)
 	abiCache := make(map[string]*ethabi.ABI)
 
 	for chainName, chainConfig := range config.Chains {
@@ -54,7 +54,8 @@ func LoadContracts(config *Config, basePath string) ([]Contract, error) {
 			promConfiguredEvents.WithLabelValues(chainName, contractName).Add(float64(len(abi.Events)))
 			promConfiguredAddresses.WithLabelValues(chainName, contractName).Add(float64(len(addresses)))
 
-			contracts = append(contracts, NewContract(chainName, contractName, abi, addresses))
+			newContract := NewContract(chainName, contractName, abi, addresses)
+			contracts[chainName] = append(contracts[chainName], newContract)
 		}
 	}
 

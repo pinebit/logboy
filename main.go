@@ -25,5 +25,5 @@ func main() {
 	app := app.NewApp(configPath)
 	defer app.Close()
 
-	app.Run()
+	app.Start()
 }

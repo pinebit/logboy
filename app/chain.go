@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum"
+	ethabi "github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -16,14 +17,6 @@ import (
 
 type Chain interface {
 	Service
-
-	Name() string
-	Contracts() []Contract
-}
-
-type shared struct {
-	logger  *zap.SugaredLogger
-	handler LogHandler
 }
 
 type chain struct {
@@ -32,7 +25,8 @@ type chain struct {
 	contracts  []Contract
 	addresses  []common.Address
 	addressMap map[common.Address]Contract
-	shared     *shared
+	logger     *zap.SugaredLogger
+	outputs    Outputs
 }
 
 var (
@@ -50,63 +44,44 @@ var (
 		Name: "lognite_logs_received",
 		Help: "The total number of received logs per chain",
 	}, []string{"chainName"})
+
+	promEvents = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "lognite_events",
+		Help: "The total number of events per contract, address and event name",
+	}, []string{"chainName", "contractName", "contractAddress", "eventName"})
 )
 
-func NewChains(config *Config, logger *zap.SugaredLogger, contracts []Contract, handler LogHandler) []Chain {
-	shared := &shared{
-		logger:  logger,
-		handler: handler,
+func NewChain(name string, config *Config, contracts []Contract, logger *zap.SugaredLogger, outputs Outputs) Chain {
+	var addresses []common.Address
+	addressMap := make(map[common.Address]Contract)
+
+	for _, contract := range contracts {
+		for _, address := range contract.Addresses() {
+			addresses = append(addresses, address)
+			addressMap[address] = contract
+		}
 	}
 
-	var chains []Chain
-	for chainName, chainConfig := range config.Chains {
-		var chainContracts []Contract
-		var addresses []common.Address
-		addressMap := make(map[common.Address]Contract)
-
-		for _, contract := range contracts {
-			if contract.ChainName() != chainName {
-				continue
-			}
-			for _, address := range contract.Addresses() {
-				addresses = append(addresses, address)
-				addressMap[address] = contract
-			}
-			chainContracts = append(chainContracts, contract)
-		}
-
-		chain := &chain{
-			name:       chainName,
-			rpc:        chainConfig.RPC,
-			contracts:  chainContracts,
-			addresses:  addresses,
-			addressMap: addressMap,
-			shared:     shared,
-		}
-		chains = append(chains, chain)
+	return &chain{
+		name:       name,
+		logger:     logger.Named(name),
+		rpc:        config.Chains[name].RPC,
+		contracts:  contracts,
+		addresses:  addresses,
+		addressMap: addressMap,
+		outputs:    outputs,
 	}
-	return chains
-}
-
-func (c chain) Name() string {
-	return c.name
-}
-
-func (c chain) Contracts() []Contract {
-	return c.contracts
 }
 
 func (c chain) Run(ctx context.Context) error {
-	logger := c.shared.logger.Named(c.name)
-
 	for {
 		promReConnections.WithLabelValues(c.name).Inc()
 
 		client, err := ethclient.DialContext(ctx, c.rpc)
 		if err != nil {
-			logger.Errorw("Failed to connect RPC", "url", c.rpc)
+			c.logger.Errorw("Failed to connect RPC", "url", c.rpc)
 		} else {
-			logger.Debugw("RPC connected", "url", c.rpc)
+			c.logger.Debugw("RPC connected", "url", c.rpc)
 			promConnections.WithLabelValues(c.name).Inc()
 
 			func() {
@@ -117,7 +92,7 @@ func (c chain) Run(ctx context.Context) error {
 
 				sub, err := client.SubscribeFilterLogs(ctx, q, logsCh)
 				if err != nil {
-					logger.Errorw("Failed to subscribe to logs", "err", err)
+					c.logger.Errorw("Failed to subscribe to logs", "err", err)
 					return
 				}
 				defer sub.Unsubscribe()
@@ -127,12 +102,12 @@ func (c chain) Run(ctx context.Context) error {
 					case <-ctx.Done():
 						return
 					case subErr := <-sub.Err():
-						logger.Errorw("Subscription error", "err", subErr)
+						c.logger.Errorw("Subscription error", "err", subErr)
 						return
 					case log := <-logsCh:
 						promLogsReceived.WithLabelValues(c.name).Inc()
 						contract := c.addressMap[log.Address]
-						c.shared.handler.Handle(ctx, c, log, contract)
+						c.handle(log, contract)
 					}
 				}
 			}()
@@ -147,4 +122,52 @@ func (c chain) Run(ctx context.Context) error {
 
 		time.Sleep(time.Second)
 	}
+}
+
+func (c chain) handle(log types.Log, contract Contract) {
+	c.logger.Debugw("Log", "chain", c.name, "address", log.Address, "contract", contract.Name(), "tx", log.TxHash)
+
+	abi := contract.ABI()
+	event, err := abi.EventByID(log.Topics[0])
+	if err == nil {
+		args, err := parseArgumentValues(log, abi, event.Inputs, event.Name, c.name, contract.Name())
+		if err != nil {
+			c.logger.Errorw("Failed to parse event", "name", event.Name, "err", err)
+		} else {
+			promEvents.WithLabelValues(c.name, contract.Name(), log.Address.Hex(), event.Name).Inc()
+
+			for _, output := range c.outputs.GetAll() {
+				output.Write(log, contract, event.Name, args)
+			}
+		}
+	}
+}
+
+func parseArgumentValues(log types.Log, abi *ethabi.ABI, args ethabi.Arguments, logName, chainName, contractName string) (map[string]interface{}, error) {
+	dataValues := make(map[string]interface{})
+	if err := abi.UnpackIntoMap(dataValues, logName, log.Data); err != nil {
+		return nil, err
+	}
+
+	topicValues := make(map[string]interface{})
+	indexedArgs := indexedArguments(args)
+	if err := ethabi.ParseTopicsIntoMap(topicValues, indexedArgs, log.Topics[1:]); err != nil {
+		return nil, err
+	}
+
+	for k, v := range dataValues {
+		topicValues[k] = v
+	}
+
+	return topicValues, nil
+}
+
+func indexedArguments(args ethabi.Arguments) ethabi.Arguments {
+	var indexed ethabi.Arguments
+	for _, arg := range args {
+		if arg.Indexed {
+			indexed = append(indexed, arg)
+		}
+	}
+	return indexed
 }

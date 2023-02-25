@@ -20,7 +20,7 @@ type Database interface {
 
 	Connect(ctx context.Context, url string) error
 	Close(ctx context.Context) error
-	MigrateSchema(ctx context.Context, rpcs []Chain) error
+	MigrateSchema(ctx context.Context, contracts map[string][]Contract) error
 }
 
 type database struct {
@@ -49,7 +49,7 @@ var (
 
 func NewDatabase(logger *zap.SugaredLogger) Database {
 	return &database{
-		logger: logger,
+		logger: logger.Named("database"),
 	}
 }
 
@@ -75,7 +75,7 @@ func (d *database) Close(ctx context.Context) error {
 	return nil
 }
 
-func (d database) MigrateSchema(ctx context.Context, chains []Chain) error {
+func (d database) MigrateSchema(ctx context.Context, contracts map[string][]Contract) error {
 	if d.db == nil {
 		return errDatabaseClosed
 	}
@@ -85,15 +85,15 @@ func (d database) MigrateSchema(ctx context.Context, chains []Chain) error {
 		return err
 	}
 
-	for _, chain := range chains {
-		_, err := tx.ExecContext(ctx, "CREATE SCHEMA IF NOT EXISTS "+chain.Name())
+	for chainName, chainContracts := range contracts {
+		_, err := tx.ExecContext(ctx, "CREATE SCHEMA IF NOT EXISTS "+chainName)
 		if err != nil {
-			d.logger.Errorw("DB failed to create schema", "name", chain.Name(), "err", err)
+			d.logger.Errorw("DB failed to create schema", "name", chainName, "err", err)
 			defer tx.Rollback()
 			return err
 		}
 
-		for _, contract := range chain.Contracts() {
+		for _, contract := range chainContracts {
 			columns := `id BIGSERIAL PRIMARY KEY,
 						ts TIMESTAMP WITHOUT TIME ZONE default (now() at time zone 'utc'),
 						tx_hash TEXT NOT NULL,
@@ -115,12 +115,12 @@ func (d database) MigrateSchema(ctx context.Context, chains []Chain) error {
 	return tx.Commit()
 }
 
-func (d database) Write(ctx context.Context, log types.Log, contract Contract, event string, args map[string]interface{}) {
+func (d database) Write(log types.Log, contract Contract, event string, args map[string]interface{}) {
 	tableName := eventsTableQN(contract)
 	if log.Removed {
-		d.removeRecords(ctx, tableName, log.TxHash)
+		d.removeRecords(context.TODO(), tableName, log.TxHash)
 	} else {
-		d.insertRecord(ctx, tableName, log, event, args)
+		d.insertRecord(context.TODO(), tableName, log, event, args)
 	}
 }
 

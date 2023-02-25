@@ -1,7 +1,6 @@
 package app
 
 import (
-	"context"
 	"sync"
 
 	"github.com/ethereum/go-ethereum/core/types"
@@ -9,7 +8,7 @@ import (
 )
 
 type Output interface {
-	Write(ctx context.Context, log types.Log, contract Contract, event string, args map[string]interface{})
+	Write(log types.Log, contract Contract, event string, args map[string]interface{})
 }
 
 type Outputs interface {
@@ -48,7 +47,7 @@ func NewLoggerOutput(logger *zap.SugaredLogger) Output {
 	}
 }
 
-func (o loggerOutput) Write(ctx context.Context, log types.Log, contract Contract, event string, args map[string]interface{}) {
+func (o loggerOutput) Write(log types.Log, contract Contract, event string, args map[string]interface{}) {
 	var logKeysAndValues []interface{}
 	logKeysAndValues = append(logKeysAndValues, ".chainName", contract.ChainName())
 	logKeysAndValues = append(logKeysAndValues, ".contractName", contract.Name())
