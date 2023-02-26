@@ -93,7 +93,7 @@ func (d postgres) MigrateSchema(ctx context.Context, contracts types.ContractsPe
 	for chainName, chainContracts := range contracts {
 		_, err := tx.ExecContext(ctx, "CREATE SCHEMA IF NOT EXISTS "+chainName)
 		if err != nil {
-			d.logger.Errorw("DB failed to create schema", "name", chainName, "err", err)
+			d.logger.Errorw("Postgres failed to create schema", "name", chainName, "err", err)
 			defer tx.Rollback()
 			return err
 		}
@@ -102,16 +102,18 @@ func (d postgres) MigrateSchema(ctx context.Context, contracts types.ContractsPe
 			tableName := eventsTableQN(contract)
 			schema := `id BIGSERIAL PRIMARY KEY,
 						ts TIMESTAMPTZ default now(),
+						address TEXT NOT NULL,
+						event TEXT NOT NULL,
+						args JSONB NOT NULL,
 						tx_hash TEXT NOT NULL,
 						tx_index NUMERIC NOT NULL,
 						block_number NUMERIC NOT NULL,
-						address TEXT NOT NULL,
-						event TEXT NOT NULL,
-						args JSONB NOT NULL`
+						block_hash TEXT NOT NULL,
+						log_index NUMERIC NOT NULL`
 			q := fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (%s);", tableName, schema)
 			_, err := tx.ExecContext(ctx, q)
 			if err != nil {
-				d.logger.Errorw("DB failed to create table", "err", err, "q", q)
+				d.logger.Errorw("Postgres failed to create table", "err", err, "q", q)
 				defer tx.Rollback()
 				return err
 			}
@@ -119,7 +121,7 @@ func (d postgres) MigrateSchema(ctx context.Context, contracts types.ContractsPe
 			columns := []string{"ts", "event"}
 			for _, column := range columns {
 				if err := d.createIndex(ctx, tx, contract, column); err != nil {
-					d.logger.Errorw("DB failed to create index for column", "err", err, "tableName", tableName, "column", column)
+					d.logger.Errorw("Postgres failed to create index for column", "err", err, "tableName", tableName, "column", column)
 					defer tx.Rollback()
 					return err
 				}
@@ -136,8 +138,8 @@ func (d postgres) Write(event *types.Event) {
 
 func (d postgres) handleEvent(ctx context.Context, event *types.Event) {
 	tableName := eventsTableQN(event.Contract)
-	if event.Log.Removed {
-		d.removeRecords(ctx, tableName, event.Log.BlockNumber)
+	if event.LogRemoved {
+		d.removeRecords(ctx, tableName, event.BlockNumber)
 	} else {
 		d.insertRecord(ctx, tableName, event)
 	}
@@ -151,15 +153,26 @@ func (d postgres) createIndex(ctx context.Context, tx *sql.Tx, contract types.Co
 }
 
 func (d postgres) insertRecord(ctx context.Context, tableName string, event *types.Event) {
-	jsonb, err := json.Marshal(event.Args)
+	jsonb, err := json.Marshal(event.EventArgs)
 	if err != nil {
-		d.logger.Errorw("DB failed marshal jsonb", "err", err)
+		d.logger.Errorw("Failed marshal json record", "err", err)
 	} else {
-		q := fmt.Sprintf("INSERT INTO %s (tx_hash, tx_index, block_number, address, event, args) VALUES ($1, $2, $3, $4, $5, $6)", tableName)
-		_, err = d.db.ExecContext(ctx, q, event.Log.TxHash.Hex(), event.Log.TxIndex, event.Log.BlockNumber, event.Log.Address.Hex(), event.Name, jsonb)
+		q := fmt.Sprintf(`INSERT INTO %s (address, event, args, tx_hash, tx_index, block_number, block_hash, log_index) 
+						  VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`, tableName)
+		_, err = d.db.ExecContext(
+			ctx,
+			q,
+			event.Address.Hex(),
+			event.EventName,
+			jsonb,
+			event.TxHash.Hex(),
+			event.TxIndex,
+			event.BlockNumber,
+			event.BlockHash.Hex(),
+			event.LogIndex)
 		if err != nil {
 			common.PromPostgresErrors.WithLabelValues(tableName).Inc()
-			d.logger.Errorw("DB failed to insert", "err", err, "q", q)
+			d.logger.Errorw("Postgres failed to insert", "err", err, "q", q)
 		} else {
 			common.PromPostgresInserts.WithLabelValues(tableName).Inc()
 		}
@@ -171,7 +184,7 @@ func (d postgres) removeRecords(ctx context.Context, tableName string, blockNumb
 	_, err := d.db.ExecContext(ctx, q)
 	if err != nil {
 		common.PromPostgresErrors.WithLabelValues(tableName).Inc()
-		d.logger.Errorw("DB failed to drop", "err", err, "q", q)
+		d.logger.Errorw("Postgres failed to delete", "err", err, "q", q)
 	} else {
 		common.PromPostgresDrops.WithLabelValues(tableName).Inc()
 	}
@@ -186,7 +199,7 @@ func (d *postgres) pruneEvents(ctx context.Context, tableName string) {
 	q := fmt.Sprintf("DELETE FROM %s WHERE ts < $1;", tableName)
 	_, err := d.db.ExecContext(ctx, q, deadline)
 	if err != nil {
-		d.logger.Errorw("DB failed to drop", "err", err, "q", q)
+		d.logger.Errorw("Postgres failed to delete", "err", err, "q", q)
 	}
 }
 

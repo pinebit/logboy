@@ -120,7 +120,19 @@ func (c chain) handle(log ethtypes.Log, contract types.Contract) {
 		} else {
 			common.PromEvents.WithLabelValues(c.name, contract.Name(), log.Address.Hex(), event.Name).Inc()
 
-			eventData := types.NewEvent(event.Name, log, contract, args)
+			eventData := &types.Event{
+				EventName:   event.Name,
+				EventArgs:   args,
+				Contract:    contract,
+				Address:     log.Address,
+				BlockNumber: log.BlockNumber,
+				BlockHash:   log.BlockHash,
+				TxHash:      log.TxHash,
+				TxIndex:     log.TxIndex,
+				LogIndex:    log.Index,
+				LogRemoved:  log.Removed,
+			}
+
 			for _, output := range c.outputs {
 				output.Write(eventData)
 			}

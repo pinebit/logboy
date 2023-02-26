@@ -1,19 +1,19 @@
 package types
 
-import "github.com/ethereum/go-ethereum/core/types"
+import (
+	"github.com/ethereum/go-ethereum/common"
+)
 
 type Event struct {
-	Name     string
-	Log      types.Log
-	Contract Contract
-	Args     map[string]interface{}
-}
+	EventName string
+	EventArgs map[string]interface{}
+	Contract  Contract
 
-func NewEvent(name string, log types.Log, contract Contract, args map[string]interface{}) *Event {
-	return &Event{
-		Name:     name,
-		Log:      log,
-		Contract: contract,
-		Args:     args,
-	}
+	Address     common.Address
+	BlockNumber uint64
+	BlockHash   common.Hash
+	TxHash      common.Hash
+	TxIndex     uint
+	LogIndex    uint
+	LogRemoved  bool
 }

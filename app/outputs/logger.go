@@ -16,16 +16,22 @@ func NewLoggerOutput(logger *zap.SugaredLogger) types.Output {
 }
 
 func (o loggerOutput) Write(event *types.Event) {
-	var logKeysAndValues []interface{}
-	logKeysAndValues = append(logKeysAndValues, ".chainName", event.Contract.ChainName())
-	logKeysAndValues = append(logKeysAndValues, ".contractName", event.Contract.Name())
-	logKeysAndValues = append(logKeysAndValues, ".contractAddress", event.Log.Address)
-	logKeysAndValues = append(logKeysAndValues, ".name", event.Name)
-	logKeysAndValues = append(logKeysAndValues, ".removed", event.Log.Removed)
+	var kv []interface{}
 
-	for ak, av := range event.Args {
-		logKeysAndValues = append(logKeysAndValues, ak, av)
+	kv = append(kv, ".chainName", event.Contract.ChainName())
+	kv = append(kv, ".contractName", event.Contract.Name())
+	kv = append(kv, ".contractAddress", event.Address)
+	kv = append(kv, ".eventName", event.EventName)
+	kv = append(kv, ".removed", event.LogRemoved)
+	kv = append(kv, ".blockNumber", event.BlockNumber)
+	kv = append(kv, ".blockHash", event.BlockHash)
+	kv = append(kv, ".txHash", event.TxHash)
+	kv = append(kv, ".txIndex", event.TxIndex)
+	kv = append(kv, ".logIndex", event.LogIndex)
+
+	for ak, av := range event.EventArgs {
+		kv = append(kv, ak, av)
 	}
 
-	o.logger.Infow("Event", logKeysAndValues...)
+	o.logger.Infow("Event", kv...)
 }
