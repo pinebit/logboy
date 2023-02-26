@@ -7,11 +7,13 @@ import (
 	"strings"
 
 	ethabi "github.com/ethereum/go-ethereum/accounts/abi"
-	"github.com/ethereum/go-ethereum/common"
+	ethcommon "github.com/ethereum/go-ethereum/common"
+	"github.com/pinebit/lognite/app/common"
+	"github.com/pinebit/lognite/app/types"
 )
 
-func LoadContracts(config *Config, basePath string) (map[string][]Contract, error) {
-	contracts := make(map[string][]Contract)
+func LoadContracts(config *Config, basePath string) (types.ContractsPerChain, error) {
+	contracts := make(types.ContractsPerChain)
 	abiCache := make(map[string]*ethabi.ABI)
 
 	for chainName, chainConfig := range config.Chains {
@@ -33,14 +35,14 @@ func LoadContracts(config *Config, basePath string) (map[string][]Contract, erro
 
 			abi := abiCache[abiFilePath]
 			addresses := contractConfig.Addresses
-			if contractConfig.Address != common.HexToAddress("0x00") {
+			if contractConfig.Address != ethcommon.HexToAddress("0x00") {
 				addresses = append(addresses, contractConfig.Address)
 			}
 
-			promConfiguredEvents.WithLabelValues(chainName, contractName).Add(float64(len(abi.Events)))
-			promConfiguredAddresses.WithLabelValues(chainName, contractName).Add(float64(len(addresses)))
+			common.PromConfiguredEvents.WithLabelValues(chainName, contractName).Add(float64(len(abi.Events)))
+			common.PromConfiguredAddresses.WithLabelValues(chainName, contractName).Add(float64(len(addresses)))
 
-			newContract := NewContract(chainName, contractName, abi, addresses)
+			newContract := types.NewContract(chainName, contractName, abi, addresses)
 			contracts[chainName] = append(contracts[chainName], newContract)
 		}
 	}

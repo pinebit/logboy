@@ -4,14 +4,15 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"sync"
 
+	"github.com/pinebit/lognite/app/types"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
-	"golang.org/x/sync/errgroup"
 )
 
 type Server interface {
-	Service
+	types.Service
 }
 
 type server struct {
@@ -28,30 +29,34 @@ func NewServer(config *ServerConfig, logger *zap.SugaredLogger) Server {
 	}
 }
 
-func (s *server) Run(ctx context.Context) error {
-	g, gctx := errgroup.WithContext(ctx)
+func (s *server) Run(ctx context.Context, done func()) {
+	defer done()
 
-	g.Go(func() error {
-		s.logger.Debugf("Listening on port %s", s.httpServer.Addr)
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
 
 		http.Handle("/metrics", promhttp.Handler())
 		http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 			_, _ = w.Write([]byte("ok"))
 		})
 
-		err := s.httpServer.ListenAndServe()
-		if err == http.ErrServerClosed {
-			return nil
+		if err := s.httpServer.ListenAndServe(); err != http.ErrServerClosed {
+			s.logger.Errorw("HTTP server error", "err", err)
 		}
-		return err
-	})
+	}()
 
-	g.Go(func() error {
-		<-gctx.Done()
-		err := s.httpServer.Shutdown(context.Background())
-		s.logger.Debug("HTTP server stopped")
-		return err
-	})
+	go func() {
+		defer wg.Done()
 
-	return g.Wait()
+		<-ctx.Done()
+		if err := s.httpServer.Shutdown(context.Background()); err != nil {
+			s.logger.Errorw("HTTP server error", "err", err)
+		}
+	}()
+
+	s.logger.Debugf("Listening on port %s", s.httpServer.Addr)
+	wg.Wait()
 }

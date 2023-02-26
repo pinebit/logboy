@@ -8,7 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ethereum/go-ethereum/common"
+	ethcommon "github.com/ethereum/go-ethereum/common"
+	"github.com/pinebit/lognite/app/common"
 	"gopkg.in/yaml.v3"
 )
 
@@ -17,8 +18,8 @@ type ConsoleConfig struct {
 }
 
 type PostgresConfig struct {
-	URL       string         `yaml:"url"`
-	Retention *time.Duration `yaml:"retention"`
+	URL       string        `yaml:"url"`
+	Retention time.Duration `yaml:"retention"`
 }
 
 type ServerConfig struct {
@@ -26,9 +27,9 @@ type ServerConfig struct {
 }
 
 type ContractConfig struct {
-	ABI       string           `yaml:"abi"`
-	Address   common.Address   `yaml:"address"`
-	Addresses []common.Address `yaml:"addresses"`
+	ABI       string              `yaml:"abi"`
+	Address   ethcommon.Address   `yaml:"address"`
+	Addresses []ethcommon.Address `yaml:"addresses"`
 }
 
 type ChainConfig struct {
@@ -61,12 +62,11 @@ func LoadConfigJSON(jsonPath string) (*Config, error) {
 	}
 
 	if config.Server.Port == 0 {
-		config.Server.Port = defaultServerPort
+		config.Server.Port = common.DefaultServerPort
 	}
 
-	if config.Outputs.Postgres != nil && config.Outputs.Postgres.Retention == nil {
-		retention := defaultPostgresRetention
-		config.Outputs.Postgres.Retention = &retention
+	if config.Outputs.Postgres != nil && config.Outputs.Postgres.Retention.Nanoseconds() == 0 {
+		config.Outputs.Postgres.Retention = common.DefaultPostgresRetention
 	}
 
 	if err := validateConfig(config); err != nil {
@@ -77,7 +77,7 @@ func LoadConfigJSON(jsonPath string) (*Config, error) {
 }
 
 func validateConfig(config *Config) error {
-	zeroAddress := common.HexToAddress("0x00")
+	zeroAddress := ethcommon.HexToAddress("0x00")
 	validIdentifier := regexp.MustCompile(`^[a-zA-Z]+(\_[a-zA-Z0-9]+)*$`)
 
 	if config.Server.Port == 0 {
@@ -119,7 +119,7 @@ func validateConfig(config *Config) error {
 		if len(config.Outputs.Postgres.URL) == 0 {
 			return errors.New("'outputs.postgres' has no 'url' specified")
 		}
-		if *config.Outputs.Postgres.Retention < time.Hour {
+		if config.Outputs.Postgres.Retention < time.Hour {
 			return errors.New("'outputs.postgres.retention' must be longer than 1h")
 		}
 	}

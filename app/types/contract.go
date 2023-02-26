@@ -1,4 +1,4 @@
-package app
+package types
 
 import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -11,6 +11,8 @@ type Contract interface {
 	ABI() *abi.ABI
 	Addresses() []common.Address
 }
+
+type ContractsPerChain map[string][]Contract
 
 type contract struct {
 	chainName string

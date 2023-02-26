@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log"
 	"os"
 
 	"github.com/pinebit/lognite/app"
@@ -23,7 +24,10 @@ func main() {
 	}
 
 	app := app.NewApp(configPath)
-	defer app.Close()
-
-	app.Start()
+	if err := app.Start(); err != nil {
+		log.Fatalf("Application error: %v", err)
+	} else {
+		log.Println("Application stopped gracefully.")
+		os.Exit(0)
+	}
 }
