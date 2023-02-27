@@ -105,7 +105,7 @@ func (d postgres) MigrateSchema(ctx context.Context, contracts types.ContractsPe
 		for _, contract := range chainContracts {
 			tableName := eventsTableQN(contract)
 			schema := `id BIGSERIAL PRIMARY KEY,
-						ts TIMESTAMPTZ default now(),
+						block_ts TIMESTAMPTZ,
 						address TEXT NOT NULL,
 						event TEXT NOT NULL,
 						args JSONB NOT NULL,
@@ -122,7 +122,7 @@ func (d postgres) MigrateSchema(ctx context.Context, contracts types.ContractsPe
 				return err
 			}
 
-			columns := []string{"ts", "event"}
+			columns := []string{"block_ts", "event"}
 			for _, column := range columns {
 				if err := d.createIndex(ctx, tx, contract, column); err != nil {
 					d.logger.Errorw("Postgres failed to create index for column", "err", err, "tableName", tableName, "column", column)
@@ -166,11 +166,12 @@ func (d postgres) insertRecord(ctx context.Context, tableName string, event *typ
 	if err != nil {
 		d.logger.Errorw("Failed marshal json record", "err", err)
 	} else {
-		q := fmt.Sprintf(`INSERT INTO %s (address, event, args, tx_hash, tx_index, block_number, block_hash, log_index) 
-						  VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`, tableName)
+		q := fmt.Sprintf(`INSERT INTO %s (block_ts, address, event, args, tx_hash, tx_index, block_number, block_hash, log_index) 
+						  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`, tableName)
 		_, err = d.db.ExecContext(
 			ctx,
 			q,
+			event.BlockTs,
 			event.Address.Hex(),
 			event.EventName,
 			jsonb,
@@ -205,7 +206,7 @@ func (d *postgres) pruneEvents(ctx context.Context, tableName string) {
 	}
 	d.lastPrune = time.Now()
 	deadline := time.Now().Add(-d.retention)
-	q := fmt.Sprintf("DELETE FROM %s WHERE ts < $1;", tableName)
+	q := fmt.Sprintf("DELETE FROM %s WHERE block_ts < $1;", tableName)
 	_, err := d.db.ExecContext(ctx, q, deadline)
 	if err != nil {
 		d.logger.Errorw("Postgres failed to delete", "err", err, "q", q)

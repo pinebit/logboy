@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"math/big"
 	"time"
 
 	"github.com/ethereum/go-ethereum"
@@ -83,6 +84,8 @@ func (c chain) Run(ctx context.Context, done func()) {
 }
 
 func (c chain) receiveLoop(ctx context.Context, client *ethclient.Client) {
+	var lastBlockNumber uint64
+	var lastBlockTs time.Time
 	filterQuery := ethereum.FilterQuery{
 		Addresses: c.addresses,
 	}
@@ -102,20 +105,32 @@ func (c chain) receiveLoop(ctx context.Context, client *ethclient.Client) {
 			c.logger.Errorw("Subscription error", "err", subErr)
 			return
 		case log := <-logsCh:
+			var blockTs time.Time
+			if log.BlockNumber != lastBlockNumber {
+				header, err := client.HeaderByNumber(ctx, big.NewInt(int64(log.BlockNumber)))
+				if err != nil {
+					c.logger.Errorw("Failed to get HeaderByNumber", "err", err)
+					return
+				}
+				lastBlockNumber = log.BlockNumber
+				lastBlockTs = time.Unix(int64(header.Time), 0)
+			}
+			blockTs = lastBlockTs
+
 			common.PromLogsReceived.WithLabelValues(c.name).Inc()
 			contract := c.addressMap[log.Address]
-			c.handle(log, contract)
+			c.handle(blockTs, &log, contract)
 		}
 	}
 }
 
-func (c chain) handle(log ethtypes.Log, contract types.Contract) {
+func (c chain) handle(blockTs time.Time, log *ethtypes.Log, contract types.Contract) {
 	c.logger.Debugw("Log", "chain", c.name, "address", log.Address, "contract", contract.Name(), "tx", log.TxHash)
 
 	abi := contract.ABI()
 	event, err := abi.EventByID(log.Topics[0])
 	if err == nil && contract.IsEventAllowed(event.Name) {
-		args, err := parseArgumentValues(log, abi, event.Inputs, event.Name, c.name, contract.Name())
+		args, err := parseArgumentValues(log, abi, event)
 		if err != nil {
 			c.logger.Errorw("Failed to parse event", "name", event.Name, "err", err)
 		} else {
@@ -126,6 +141,7 @@ func (c chain) handle(log ethtypes.Log, contract types.Contract) {
 				EventArgs:   args,
 				Contract:    contract,
 				Address:     log.Address,
+				BlockTs:     blockTs,
 				BlockNumber: log.BlockNumber,
 				BlockHash:   log.BlockHash,
 				TxHash:      log.TxHash,
@@ -141,23 +157,23 @@ func (c chain) handle(log ethtypes.Log, contract types.Contract) {
 	}
 }
 
-func parseArgumentValues(log ethtypes.Log, abi *ethabi.ABI, args ethabi.Arguments, logName, chainName, contractName string) (map[string]interface{}, error) {
+func parseArgumentValues(log *ethtypes.Log, abi *ethabi.ABI, event *ethabi.Event) (map[string]interface{}, error) {
 	dataValues := make(map[string]interface{})
-	if err := abi.UnpackIntoMap(dataValues, logName, log.Data); err != nil {
+	if err := abi.UnpackIntoMap(dataValues, event.Name, log.Data); err != nil {
 		return nil, err
 	}
 
-	topicValues := make(map[string]interface{})
-	indexedArgs := indexedArguments(args)
-	if err := ethabi.ParseTopicsIntoMap(topicValues, indexedArgs, log.Topics[1:]); err != nil {
+	allValues := make(map[string]interface{})
+	indexedArgs := indexedArguments(event.Inputs)
+	if err := ethabi.ParseTopicsIntoMap(allValues, indexedArgs, log.Topics[1:]); err != nil {
 		return nil, err
 	}
 
 	for k, v := range dataValues {
-		topicValues[k] = v
+		allValues[k] = v
 	}
 
-	return topicValues, nil
+	return allValues, nil
 }
 
 func indexedArguments(args ethabi.Arguments) ethabi.Arguments {

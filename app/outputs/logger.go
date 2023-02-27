@@ -23,6 +23,7 @@ func (o loggerOutput) Write(event *types.Event) {
 	kv = append(kv, ".contractAddress", event.Address)
 	kv = append(kv, ".eventName", event.EventName)
 	kv = append(kv, ".removed", event.LogRemoved)
+	kv = append(kv, ".blockTs", event.BlockTs)
 	kv = append(kv, ".blockNumber", event.BlockNumber)
 	kv = append(kv, ".blockHash", event.BlockHash)
 	kv = append(kv, ".txHash", event.TxHash)
