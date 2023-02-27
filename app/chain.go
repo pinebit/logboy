@@ -9,6 +9,7 @@ import (
 	"github.com/ethereum/go-ethereum"
 	ethabi "github.com/ethereum/go-ethereum/accounts/abi"
 	ethcommon "github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/jpillora/backoff"
@@ -173,6 +174,8 @@ func parseArgumentValues(log *ethtypes.Log, abi *ethabi.ABI, event *ethabi.Event
 		allValues[k] = v
 	}
 
+	hexifyRawBytes(allValues)
+
 	return allValues, nil
 }
 
@@ -184,4 +187,15 @@ func indexedArguments(args ethabi.Arguments) ethabi.Arguments {
 		}
 	}
 	return indexed
+}
+
+func hexifyRawBytes(kv map[string]interface{}) {
+	for k, v := range kv {
+		switch val := v.(type) {
+		case []byte:
+			kv[k] = hexutil.Encode(val)
+		case [32]byte:
+			kv[k] = hexutil.Encode(val[:])
+		}
+	}
 }
