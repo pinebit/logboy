@@ -27,7 +27,7 @@ type Postgres interface {
 type postgres struct {
 	db        *sqlx.DB
 	logger    *zap.SugaredLogger
-	queue     common.Queue[*types.Event]
+	queue     chan *types.Event
 	retention time.Duration
 	lastPrune time.Time
 }
@@ -39,7 +39,7 @@ var (
 func NewPostgres(logger *zap.SugaredLogger, retention time.Duration) Postgres {
 	return &postgres{
 		logger:    logger.Named("postgres"),
-		queue:     common.NewQueue[*types.Event](uint(common.DefaultQueueCapacity)),
+		queue:     make(chan *types.Event, common.DefaultQueueCapacity),
 		retention: retention,
 		lastPrune: time.Now().Add(-common.DefaultPostgresPruneInterval),
 	}
@@ -59,6 +59,7 @@ func (d *postgres) Connect(ctx context.Context, url string) error {
 
 func (d *postgres) Close(ctx context.Context) error {
 	if d.db != nil {
+		close(d.queue)
 		if err := d.db.Close(); err != nil {
 			return err
 		}
@@ -70,14 +71,17 @@ func (d *postgres) Close(ctx context.Context) error {
 func (d postgres) Run(ctx context.Context, done func()) {
 	defer done()
 
-	d.queue.RunDequeueLoop(ctx, func(ctx context.Context, item *types.Event, discarded bool) {
-		if discarded {
-			common.PromQueueDiscarded.WithLabelValues("postgres").Inc()
-			d.logger.Error("Postgres queue discarded one item")
-		} else {
-			d.handleEvent(ctx, item)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case event, ok := <-d.queue:
+			if !ok {
+				return
+			}
+			d.handleEvent(ctx, event)
 		}
-	})
+	}
 }
 
 func (d postgres) MigrateSchema(ctx context.Context, contracts types.ContractsPerChain) error {
@@ -133,7 +137,12 @@ func (d postgres) MigrateSchema(ctx context.Context, contracts types.ContractsPe
 }
 
 func (d postgres) Write(event *types.Event) {
-	d.queue.Enqueue(event)
+	if len(d.queue) < common.DefaultQueueCapacity {
+		d.queue <- event
+	} else {
+		common.PromQueueDiscarded.WithLabelValues("postgres").Inc()
+		d.logger.Errorw("Postgres queue is full, discarding event")
+	}
 }
 
 func (d postgres) handleEvent(ctx context.Context, event *types.Event) {

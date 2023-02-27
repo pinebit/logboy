@@ -20,17 +20,11 @@ func LoadContracts(config *Config, basePath string) (types.ContractsPerChain, er
 		for contractName, contractConfig := range chainConfig.Contracts {
 			abiFilePath := path.Join(basePath, contractConfig.ABI)
 			if _, exists := abiCache[abiFilePath]; !exists {
-				abiData, err := os.ReadFile(abiFilePath)
+				abi, err := readABI(abiFilePath)
 				if err != nil {
-					return nil, fmt.Errorf("failed to read ABI file: %s, err: %v", contractConfig.ABI, err)
+					return nil, err
 				}
-
-				abi, err := ethabi.JSON(strings.NewReader(string(abiData)))
-				if err != nil {
-					return nil, fmt.Errorf("failed to decode ABI: %s, err: %v", contractConfig.ABI, err)
-				}
-
-				abiCache[abiFilePath] = &abi
+				abiCache[abiFilePath] = abi
 			}
 
 			abi := abiCache[abiFilePath]
@@ -42,10 +36,29 @@ func LoadContracts(config *Config, basePath string) (types.ContractsPerChain, er
 			common.PromConfiguredEvents.WithLabelValues(chainName, contractName).Add(float64(len(abi.Events)))
 			common.PromConfiguredAddresses.WithLabelValues(chainName, contractName).Add(float64(len(addresses)))
 
-			newContract := types.NewContract(chainName, contractName, abi, addresses)
+			allowedEvents := make(map[string]struct{})
+			for _, eventName := range contractConfig.Events {
+				allowedEvents[eventName] = struct{}{}
+			}
+
+			newContract := types.NewContract(chainName, contractName, abi, addresses, allowedEvents)
 			contracts[chainName] = append(contracts[chainName], newContract)
 		}
 	}
 
 	return contracts, nil
+}
+
+func readABI(filepath string) (*ethabi.ABI, error) {
+	abiData, err := os.ReadFile(filepath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read ABI file: %s, err: %v", filepath, err)
+	}
+
+	abi, err := ethabi.JSON(strings.NewReader(string(abiData)))
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode ABI: %s, err: %v", filepath, err)
+	}
+
+	return &abi, nil
 }

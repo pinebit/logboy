@@ -30,7 +30,7 @@ type chain struct {
 	outputs    types.Outputs
 }
 
-func NewChain(name string, config *Config, contracts []types.Contract, logger *zap.SugaredLogger, outputs types.Outputs) Chain {
+func NewChain(name, rpc string, contracts []types.Contract, logger *zap.SugaredLogger, outputs types.Outputs) Chain {
 	var addresses []ethcommon.Address
 	addressMap := make(map[ethcommon.Address]types.Contract)
 
@@ -44,7 +44,7 @@ func NewChain(name string, config *Config, contracts []types.Contract, logger *z
 	return &chain{
 		name:       name,
 		logger:     logger.Named(name),
-		rpc:        config.Chains[name].RPC,
+		rpc:        rpc,
 		contracts:  contracts,
 		addresses:  addresses,
 		addressMap: addressMap,
@@ -68,33 +68,7 @@ func (c chain) Run(ctx context.Context, done func()) {
 			common.PromConnections.WithLabelValues(c.name).Inc()
 			backoff.Reset()
 
-			func() {
-				q := ethereum.FilterQuery{
-					Addresses: c.addresses,
-				}
-				logsCh := make(chan ethtypes.Log)
-
-				sub, err := client.SubscribeFilterLogs(ctx, q, logsCh)
-				if err != nil {
-					c.logger.Errorw("Failed to subscribe to logs", "err", err)
-					return
-				}
-				defer sub.Unsubscribe()
-
-				for {
-					select {
-					case <-ctx.Done():
-						return
-					case subErr := <-sub.Err():
-						c.logger.Errorw("Subscription error", "err", subErr)
-						return
-					case log := <-logsCh:
-						common.PromLogsReceived.WithLabelValues(c.name).Inc()
-						contract := c.addressMap[log.Address]
-						c.handle(log, contract)
-					}
-				}
-			}()
+			c.receiveLoop(ctx, client)
 		}
 
 		client.Close()
@@ -108,12 +82,39 @@ func (c chain) Run(ctx context.Context, done func()) {
 	}
 }
 
+func (c chain) receiveLoop(ctx context.Context, client *ethclient.Client) {
+	filterQuery := ethereum.FilterQuery{
+		Addresses: c.addresses,
+	}
+	logsCh := make(chan ethtypes.Log)
+	sub, err := client.SubscribeFilterLogs(ctx, filterQuery, logsCh)
+	if err != nil {
+		c.logger.Errorw("Failed to subscribe to logs", "err", err)
+		return
+	}
+	defer sub.Unsubscribe()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case subErr := <-sub.Err():
+			c.logger.Errorw("Subscription error", "err", subErr)
+			return
+		case log := <-logsCh:
+			common.PromLogsReceived.WithLabelValues(c.name).Inc()
+			contract := c.addressMap[log.Address]
+			c.handle(log, contract)
+		}
+	}
+}
+
 func (c chain) handle(log ethtypes.Log, contract types.Contract) {
 	c.logger.Debugw("Log", "chain", c.name, "address", log.Address, "contract", contract.Name(), "tx", log.TxHash)
 
 	abi := contract.ABI()
 	event, err := abi.EventByID(log.Topics[0])
-	if err == nil {
+	if err == nil && contract.IsEventAllowed(event.Name) {
 		args, err := parseArgumentValues(log, abi, event.Inputs, event.Name, c.name, contract.Name())
 		if err != nil {
 			c.logger.Errorw("Failed to parse event", "name", event.Name, "err", err)

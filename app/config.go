@@ -30,6 +30,7 @@ type ContractConfig struct {
 	ABI       string              `yaml:"abi"`
 	Address   ethcommon.Address   `yaml:"address"`
 	Addresses []ethcommon.Address `yaml:"addresses"`
+	Events    []string            `yaml:"events"`
 }
 
 type ChainConfig struct {
@@ -111,6 +112,11 @@ func validateConfig(config *Config) error {
 			}
 			if contract.Address == zeroAddress && len(contract.Addresses) == 0 {
 				return fmt.Errorf("chain '%s' contract '%s' has neither 'address' nor 'addresses' specified", chainName, contractName)
+			}
+			for _, eventName := range contract.Events {
+				if !validIdentifier.MatchString(eventName) {
+					return fmt.Errorf("chain '%s' contract '%s' has invalid 'events' value: '%s'", chainName, contractName, eventName)
+				}
 			}
 		}
 	}
