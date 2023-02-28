@@ -1,0 +1,14 @@
+chains:
+  mumbai:
+    rpc: $MUMBAI_RPC_URL
+    contracts:
+      FunctionsBillingRegistry:
+        abi: "FunctionsBillingRegistry.json"
+        address: "0xEe9Bf52E5Ea228404bB54BCFbbDa8c21131b9039"
+      FunctionsOracle:
+        abi: "FunctionsOracle.json"
+        address: "0xeA6721aC65BCeD841B8ec3fc5fEdeA6141a0aDE4"
+outputs:
+  postgres:
+    url: $POSTGRES_URL
+    retention: "1h"

@@ -7,9 +7,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum"
-	ethabi "github.com/ethereum/go-ethereum/accounts/abi"
 	ethcommon "github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/jpillora/backoff"
@@ -85,8 +83,7 @@ func (c chain) Run(ctx context.Context, done func()) {
 }
 
 func (c chain) receiveLoop(ctx context.Context, client *ethclient.Client) {
-	var lastBlockNumber uint64
-	var lastBlockTs time.Time
+	headers := NewHeaders()
 	filterQuery := ethereum.FilterQuery{
 		Addresses: c.addresses,
 	}
@@ -106,96 +103,29 @@ func (c chain) receiveLoop(ctx context.Context, client *ethclient.Client) {
 			c.logger.Errorw("Subscription error", "err", subErr)
 			return
 		case log := <-logsCh:
-			var blockTs time.Time
-			if log.BlockNumber != lastBlockNumber {
+			lastHeader := headers.FindHeaderByNumber(log.BlockNumber)
+			if lastHeader == nil {
 				header, err := client.HeaderByNumber(ctx, big.NewInt(int64(log.BlockNumber)))
 				if err != nil {
 					c.logger.Errorw("Failed to get HeaderByNumber", "err", err)
 					return
 				}
-				lastBlockNumber = log.BlockNumber
-				lastBlockTs = time.Unix(int64(header.Time), 0)
+				headers.AddHeader(header)
+				lastHeader = header
 			}
-			blockTs = lastBlockTs
-
-			common.PromLogsReceived.WithLabelValues(c.name).Inc()
 			contract := c.addressMap[log.Address]
-			c.handle(blockTs, &log, contract)
-		}
-	}
-}
+			common.PromLogsReceived.WithLabelValues(c.name, contract.Name()).Inc()
+			blockTs := time.Unix(lastHeader.Number.Int64(), 0)
+			event, err := decodeEvent(blockTs, &log, contract)
+			if err != nil {
+				c.logger.Errorw("Failed to parse event", "err", err)
+			} else if event != nil {
+				common.PromEvents.WithLabelValues(c.name, contract.Name(), event.EventName).Inc()
 
-func (c chain) handle(blockTs time.Time, log *ethtypes.Log, contract types.Contract) {
-	c.logger.Debugw("Log", "chain", c.name, "address", log.Address, "contract", contract.Name(), "tx", log.TxHash)
-
-	abi := contract.ABI()
-	event, err := abi.EventByID(log.Topics[0])
-	if err == nil && contract.IsEventAllowed(event.Name) {
-		args, err := parseArgumentValues(log, abi, event)
-		if err != nil {
-			c.logger.Errorw("Failed to parse event", "name", event.Name, "err", err)
-		} else {
-			common.PromEvents.WithLabelValues(c.name, contract.Name(), log.Address.Hex(), event.Name).Inc()
-
-			eventData := &types.Event{
-				EventName:   event.Name,
-				EventArgs:   args,
-				Contract:    contract,
-				Address:     log.Address,
-				BlockTs:     blockTs,
-				BlockNumber: log.BlockNumber,
-				BlockHash:   log.BlockHash,
-				TxHash:      log.TxHash,
-				TxIndex:     log.TxIndex,
-				LogIndex:    log.Index,
-				LogRemoved:  log.Removed,
+				for _, output := range c.outputs {
+					output.Write(event)
+				}
 			}
-
-			for _, output := range c.outputs {
-				output.Write(eventData)
-			}
-		}
-	}
-}
-
-func parseArgumentValues(log *ethtypes.Log, abi *ethabi.ABI, event *ethabi.Event) (map[string]interface{}, error) {
-	dataValues := make(map[string]interface{})
-	if err := abi.UnpackIntoMap(dataValues, event.Name, log.Data); err != nil {
-		return nil, err
-	}
-
-	allValues := make(map[string]interface{})
-	indexedArgs := indexedArguments(event.Inputs)
-	if err := ethabi.ParseTopicsIntoMap(allValues, indexedArgs, log.Topics[1:]); err != nil {
-		return nil, err
-	}
-
-	for k, v := range dataValues {
-		allValues[k] = v
-	}
-
-	hexifyRawBytes(allValues)
-
-	return allValues, nil
-}
-
-func indexedArguments(args ethabi.Arguments) ethabi.Arguments {
-	var indexed ethabi.Arguments
-	for _, arg := range args {
-		if arg.Indexed {
-			indexed = append(indexed, arg)
-		}
-	}
-	return indexed
-}
-
-func hexifyRawBytes(kv map[string]interface{}) {
-	for k, v := range kv {
-		switch val := v.(type) {
-		case []byte:
-			kv[k] = hexutil.Encode(val)
-		case [32]byte:
-			kv[k] = hexutil.Encode(val[:])
 		}
 	}
 }

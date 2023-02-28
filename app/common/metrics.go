@@ -18,13 +18,13 @@ var (
 
 	PromLogsReceived = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "lognite_logs_received",
-		Help: "The total number of received logs per chain",
-	}, []string{"chainName"})
+		Help: "The total number of received logs per chain and contract",
+	}, []string{"chainName", "contractName"})
 
 	PromEvents = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "lognite_events",
-		Help: "The total number of events per contract, address and event name",
-	}, []string{"chainName", "contractName", "contractAddress", "eventName"})
+		Help: "The total number of events per chain, contract and event name",
+	}, []string{"chainName", "contractName", "eventName"})
 
 	PromConfiguredEvents = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "lognite_configured_events",
