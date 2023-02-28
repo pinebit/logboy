@@ -24,4 +24,4 @@ chains:
 outputs:
   postgres:
     url: $POSTGRES_URL
-    retention: "1h"
+    retention: "24h"

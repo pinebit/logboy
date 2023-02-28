@@ -28,9 +28,10 @@ type chain struct {
 	addressMap map[ethcommon.Address]types.Contract
 	logger     *zap.SugaredLogger
 	outputs    types.Outputs
+	blocks     Blocks
 }
 
-func NewChain(name, rpc string, contracts []types.Contract, logger *zap.SugaredLogger, outputs types.Outputs) Chain {
+func NewChain(chainName string, config ChainConfig, contracts []types.Contract, logger *zap.SugaredLogger, outputs types.Outputs) Chain {
 	var addresses []ethcommon.Address
 	addressMap := make(map[ethcommon.Address]types.Contract)
 
@@ -42,13 +43,14 @@ func NewChain(name, rpc string, contracts []types.Contract, logger *zap.SugaredL
 	}
 
 	return &chain{
-		name:       name,
-		logger:     logger.Named(name),
-		rpc:        rpc,
+		name:       chainName,
+		logger:     logger.Named(chainName),
+		rpc:        config.RPC,
 		contracts:  contracts,
 		addresses:  addresses,
 		addressMap: addressMap,
 		outputs:    outputs,
+		blocks:     NewBlocks(config.Backfill),
 	}
 }
 
@@ -83,7 +85,7 @@ func (c chain) Run(ctx context.Context, done func()) {
 }
 
 func (c chain) receiveLoop(ctx context.Context, client *ethclient.Client) {
-	headers := NewHeaders()
+	var previousBlockNumber uint64
 	filterQuery := ethereum.FilterQuery{
 		Addresses: c.addresses,
 	}
@@ -103,29 +105,62 @@ func (c chain) receiveLoop(ctx context.Context, client *ethclient.Client) {
 			c.logger.Errorw("Subscription error", "err", subErr)
 			return
 		case log := <-logsCh:
-			lastHeader := headers.FindHeaderByNumber(log.BlockNumber)
-			if lastHeader == nil {
-				header, err := client.HeaderByNumber(ctx, big.NewInt(int64(log.BlockNumber)))
-				if err != nil {
-					c.logger.Errorw("Failed to get HeaderByNumber", "err", err)
-					return
+			// TODO: handle removed separately!
+			if previousBlockNumber != log.BlockNumber {
+				if previousBlockNumber > 0 {
+					block := c.blocks.GetBlockByNumber(previousBlockNumber)
+					if block != nil {
+						block.State = ProcessedBlockState
+					}
 				}
-				headers.AddHeader(header)
-				lastHeader = header
+				previousBlockNumber = log.BlockNumber
 			}
-			contract := c.addressMap[log.Address]
-			common.PromLogsReceived.WithLabelValues(c.name, contract.Name()).Inc()
-			blockTs := time.Unix(lastHeader.Number.Int64(), 0)
-			event, err := decodeEvent(blockTs, &log, contract)
+			// Check if new block is not lower than previos
+			timestamp, err := c.tryGetBlockTimestamp(ctx, client, log.BlockNumber)
 			if err != nil {
-				c.logger.Errorw("Failed to parse event", "err", err)
-			} else if event != nil {
-				common.PromEvents.WithLabelValues(c.name, contract.Name(), event.EventName).Inc()
-
-				for _, output := range c.outputs {
-					output.Write(event)
-				}
+				c.logger.Errorw("Too old block number", "err", err)
+				return
 			}
+			c.handleLog(ctx, client, &log, timestamp)
+		}
+	}
+}
+
+func (c chain) tryGetBlockTimestamp(ctx context.Context, client *ethclient.Client, blockNumber uint64) (timestamp uint64, err error) {
+	block := c.blocks.GetBlockByNumber(blockNumber)
+	if block != nil {
+		c.logger.Infof("Found existing block: %d", blockNumber)
+		timestamp = block.Timestamp
+	} else {
+		var header *ethtypes.Header
+		header, err = client.HeaderByNumber(ctx, big.NewInt(int64(blockNumber)))
+		if err == nil {
+			timestamp = header.Time
+			if err = c.blocks.AddNewBlock(blockNumber, timestamp); err != nil {
+				c.logger.Errorw("Failed to blocks.AddNewBlock", "err", err, "blockNumber", blockNumber)
+			} else {
+				c.logger.Infow("AddNewBlock OK", "blockNumber", blockNumber)
+			}
+			c.logger.Infof("Got HeaderByNumber: %d, ts: %d", blockNumber, timestamp)
+		} else {
+			c.logger.Errorw("Calling HeaderByNumber failed", "err", err)
+		}
+	}
+	return
+}
+
+func (c chain) handleLog(ctx context.Context, client *ethclient.Client, log *ethtypes.Log, timestamp uint64) {
+	contract := c.addressMap[log.Address]
+	common.PromLogsReceived.WithLabelValues(c.name, contract.Name()).Inc()
+	blockTs := time.Unix(int64(timestamp), 0)
+	event, err := decodeEvent(blockTs, log, contract)
+	if err != nil {
+		c.logger.Errorw("Failed to parse event", "err", err)
+	} else if event != nil {
+		common.PromEvents.WithLabelValues(c.name, contract.Name(), event.EventName).Inc()
+
+		for _, output := range c.outputs {
+			output.Write(event)
 		}
 	}
 }

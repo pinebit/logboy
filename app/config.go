@@ -35,6 +35,7 @@ type ContractConfig struct {
 
 type ChainConfig struct {
 	RPC       string                    `yaml:"rpc"`
+	Backfill  int                       `yaml:"backfill"`
 	Contracts map[string]ContractConfig `yaml:"contracts"`
 }
 
@@ -62,6 +63,16 @@ func LoadConfigJSON(jsonPath string) (*Config, error) {
 		return nil, err
 	}
 
+	adjustDefaultValues(config)
+
+	if err := validateConfig(config); err != nil {
+		return nil, err
+	}
+
+	return config, err
+}
+
+func adjustDefaultValues(config *Config) {
 	if config.Server.Port == 0 {
 		config.Server.Port = common.DefaultServerPort
 	}
@@ -70,11 +81,12 @@ func LoadConfigJSON(jsonPath string) (*Config, error) {
 		config.Outputs.Postgres.Retention = common.DefaultPostgresRetention
 	}
 
-	if err := validateConfig(config); err != nil {
-		return nil, err
+	for chainName, chain := range config.Chains {
+		if chain.Backfill == 0 {
+			chain.Backfill = common.DefaultBackfillDepth
+			config.Chains[chainName] = chain
+		}
 	}
-
-	return config, err
 }
 
 func validateConfig(config *Config) error {
@@ -98,6 +110,12 @@ func validateConfig(config *Config) error {
 		}
 		if len(chain.Contracts) == 0 {
 			return fmt.Errorf("chain '%s' has no contracts configured", chainName)
+		}
+		if chain.Backfill < 1 {
+			return fmt.Errorf("chain '%s' 'backfill' depth is too short", chainName)
+		}
+		if chain.Backfill > 1000 {
+			return fmt.Errorf("chain '%s' 'backfill' depth is too long", chainName)
 		}
 
 		for contractName, contract := range chain.Contracts {

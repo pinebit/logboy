@@ -78,7 +78,7 @@ func (a *app) Start() error {
 
 	var chainServices []types.Service
 	for chainName, chainContracts := range contracts {
-		chain := NewChain(chainName, config.Chains[chainName].RPC, chainContracts, a.logger, outputs)
+		chain := NewChain(chainName, config.Chains[chainName], chainContracts, a.logger, outputs)
 		chainServices = append(chainServices, chain)
 	}
 
