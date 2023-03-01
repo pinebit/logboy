@@ -138,11 +138,13 @@ func (c *chain) getBlockLogs(ctx context.Context, client *ethclient.Client, bloc
 	}
 	if c.lastBlockHash != zeroHash && header.ParentHash != c.lastBlockHash {
 		common.PromReorgErrors.WithLabelValues(c.name).Inc()
-		return fmt.Errorf("block parent hash mismatch, likely due to large reorg")
+		c.logger.Errorw("Block parent hash mismatch (can be a reorg), try increasing confirmations", "parentHash", header.ParentHash)
+		return fmt.Errorf("forced to reconnect")
 	}
 	if c.lastBlockNumber != header.Number.Uint64()-1 {
 		common.PromReorgErrors.WithLabelValues(c.name).Inc()
-		return fmt.Errorf("block number is not in-order, likely due to large reorg")
+		c.logger.Errorw("Block number is out of order (can be a reorg), try increasing confirmations", "blockNumber", header.Number.Uint64())
+		return fmt.Errorf("forced to reconnect")
 	}
 	logs, err := client.FilterLogs(ctx, ethereum.FilterQuery{
 		Addresses: c.addresses,
@@ -155,7 +157,7 @@ func (c *chain) getBlockLogs(ctx context.Context, client *ethclient.Client, bloc
 	for _, log := range logs {
 		if log.Removed {
 			common.PromReorgErrors.WithLabelValues(c.name).Inc()
-			c.logger.Errorw("Ignoring unexpected removed log", "tx_hash", log.TxHash, "tx_index", log.TxIndex)
+			c.logger.Errorw("Ignoring unexpected removed log, consider increasing confirmations", "tx_hash", log.TxHash, "tx_index", log.TxIndex)
 		} else {
 			c.decodeAndOutputLog(&log, header.Time)
 		}
@@ -172,7 +174,7 @@ func (c chain) decodeAndOutputLog(log *ethtypes.Log, timestamp uint64) {
 	event, err := decodeEvent(blockTs, log, contract)
 	if err != nil {
 		common.PromEventsMalformed.WithLabelValues(c.name, contract.Name()).Inc()
-		c.logger.Errorw("Failed to decode event", "err", err)
+		c.logger.Warnw("Could not decode event", "err", err)
 	} else if event != nil {
 		common.PromEvents.WithLabelValues(c.name, contract.Name(), event.EventName).Inc()
 		c.outputs.Write(event)
