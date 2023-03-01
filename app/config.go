@@ -34,9 +34,9 @@ type ContractConfig struct {
 }
 
 type ChainConfig struct {
-	RPC       string                    `yaml:"rpc"`
-	Backfill  int                       `yaml:"backfill"`
-	Contracts map[string]ContractConfig `yaml:"contracts"`
+	RPC           string                    `yaml:"rpc"`
+	Confirmations uint                      `yaml:"confirmations"`
+	Contracts     map[string]ContractConfig `yaml:"contracts"`
 }
 
 type OutputsConfig struct {
@@ -82,8 +82,8 @@ func adjustDefaultValues(config *Config) {
 	}
 
 	for chainName, chain := range config.Chains {
-		if chain.Backfill == 0 {
-			chain.Backfill = common.DefaultBackfillDepth
+		if chain.Confirmations == 0 {
+			chain.Confirmations = common.DefaultConfirmations
 			config.Chains[chainName] = chain
 		}
 	}
@@ -111,11 +111,8 @@ func validateConfig(config *Config) error {
 		if len(chain.Contracts) == 0 {
 			return fmt.Errorf("chain '%s' has no contracts configured", chainName)
 		}
-		if chain.Backfill < 1 {
-			return fmt.Errorf("chain '%s' 'backfill' depth is too short", chainName)
-		}
-		if chain.Backfill > 1000 {
-			return fmt.Errorf("chain '%s' 'backfill' depth is too long", chainName)
+		if chain.Confirmations > 10000 {
+			return fmt.Errorf("chain '%s' 'confirmations' is too large", chainName)
 		}
 
 		for contractName, contract := range chain.Contracts {

@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math/big"
 	"time"
 
@@ -21,15 +22,21 @@ type Chain interface {
 }
 
 type chain struct {
-	name       string
-	rpc        string
-	contracts  []types.Contract
-	addresses  []ethcommon.Address
-	addressMap map[ethcommon.Address]types.Contract
-	logger     *zap.SugaredLogger
-	outputs    types.Outputs
-	blocks     Blocks
+	name            string
+	rpc             string
+	contracts       []types.Contract
+	addresses       []ethcommon.Address
+	addressMap      map[ethcommon.Address]types.Contract
+	logger          *zap.SugaredLogger
+	outputs         types.Outputs
+	confirmations   uint
+	lastBlockNumber uint64
+	lastBlockHash   ethcommon.Hash
 }
+
+var (
+	zeroHash = ethcommon.HexToHash("0x0")
+)
 
 func NewChain(chainName string, config ChainConfig, contracts []types.Contract, logger *zap.SugaredLogger, outputs types.Outputs) Chain {
 	var addresses []ethcommon.Address
@@ -43,14 +50,14 @@ func NewChain(chainName string, config ChainConfig, contracts []types.Contract, 
 	}
 
 	return &chain{
-		name:       chainName,
-		logger:     logger.Named(chainName),
-		rpc:        config.RPC,
-		contracts:  contracts,
-		addresses:  addresses,
-		addressMap: addressMap,
-		outputs:    outputs,
-		blocks:     NewBlocks(config.Backfill),
+		name:          chainName,
+		logger:        logger.Named(chainName),
+		rpc:           config.RPC,
+		contracts:     contracts,
+		addresses:     addresses,
+		addressMap:    addressMap,
+		outputs:       outputs,
+		confirmations: config.Confirmations,
 	}
 }
 
@@ -84,83 +91,90 @@ func (c chain) Run(ctx context.Context, done func()) {
 	}
 }
 
-func (c chain) receiveLoop(ctx context.Context, client *ethclient.Client) {
-	var previousBlockNumber uint64
-	filterQuery := ethereum.FilterQuery{
-		Addresses: c.addresses,
-	}
-	logsCh := make(chan ethtypes.Log)
-	sub, err := client.SubscribeFilterLogs(ctx, filterQuery, logsCh)
+func (c *chain) receiveLoop(ctx context.Context, client *ethclient.Client) {
+	headersCh := make(chan *ethtypes.Header)
+	sub, err := client.SubscribeNewHead(ctx, headersCh)
 	if err != nil {
-		c.logger.Errorw("Failed to subscribe to logs", "err", err)
+		c.logger.Errorw("Call to SubscribeNewHead failed, will reconnect", "err", err)
 		return
 	}
 	defer sub.Unsubscribe()
+
+	var stopAtBlockNumber uint64
+	timer := time.NewTimer(common.DefaultBackfillInterval)
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case subErr := <-sub.Err():
-			c.logger.Errorw("Subscription error", "err", subErr)
+			c.logger.Errorw("Logs subscription error, will reconnect", "err", subErr)
 			return
-		case log := <-logsCh:
-			// TODO: handle removed separately!
-			if previousBlockNumber != log.BlockNumber {
-				if previousBlockNumber > 0 {
-					block := c.blocks.GetBlockByNumber(previousBlockNumber)
-					if block != nil {
-						block.State = ProcessedBlockState
-					}
+		case header := <-headersCh:
+			stopAtBlockNumber = header.Number.Uint64() - uint64(c.confirmations)
+			if c.lastBlockNumber == 0 {
+				c.lastBlockNumber = stopAtBlockNumber - 1
+			}
+		case <-timer.C:
+			if stopAtBlockNumber > c.lastBlockNumber {
+				nextBlockNumber := c.lastBlockNumber + 1
+				if err := c.getBlockLogs(ctx, client, nextBlockNumber); err != nil {
+					c.logger.Errorw("Failed pulling logs for block, will reconnect", "blockNumber", nextBlockNumber, "err", err)
+					return
 				}
-				previousBlockNumber = log.BlockNumber
 			}
-			// Check if new block is not lower than previos
-			timestamp, err := c.tryGetBlockTimestamp(ctx, client, log.BlockNumber)
-			if err != nil {
-				c.logger.Errorw("Too old block number", "err", err)
-				return
-			}
-			c.handleLog(ctx, client, &log, timestamp)
+		}
+		if stopAtBlockNumber > c.lastBlockNumber {
+			timer.Reset(common.DefaultBackfillInterval)
 		}
 	}
 }
 
-func (c chain) tryGetBlockTimestamp(ctx context.Context, client *ethclient.Client, blockNumber uint64) (timestamp uint64, err error) {
-	block := c.blocks.GetBlockByNumber(blockNumber)
-	if block != nil {
-		c.logger.Infof("Found existing block: %d", blockNumber)
-		timestamp = block.Timestamp
-	} else {
-		var header *ethtypes.Header
-		header, err = client.HeaderByNumber(ctx, big.NewInt(int64(blockNumber)))
-		if err == nil {
-			timestamp = header.Time
-			if err = c.blocks.AddNewBlock(blockNumber, timestamp); err != nil {
-				c.logger.Errorw("Failed to blocks.AddNewBlock", "err", err, "blockNumber", blockNumber)
-			} else {
-				c.logger.Infow("AddNewBlock OK", "blockNumber", blockNumber)
-			}
-			c.logger.Infof("Got HeaderByNumber: %d, ts: %d", blockNumber, timestamp)
+func (c *chain) getBlockLogs(ctx context.Context, client *ethclient.Client, blockNumber uint64) error {
+	bigBlockNumber := big.NewInt(int64(blockNumber))
+	header, err := client.HeaderByNumber(ctx, bigBlockNumber)
+	if err != nil {
+		return fmt.Errorf("call to HeaderByNumber failed: %v", err)
+	}
+	if c.lastBlockHash != zeroHash && header.ParentHash != c.lastBlockHash {
+		common.PromReorgErrors.WithLabelValues(c.name).Inc()
+		return fmt.Errorf("block parent hash mismatch, likely due to large reorg")
+	}
+	if c.lastBlockNumber != header.Number.Uint64()-1 {
+		common.PromReorgErrors.WithLabelValues(c.name).Inc()
+		return fmt.Errorf("block number is not in-order, likely due to large reorg")
+	}
+	logs, err := client.FilterLogs(ctx, ethereum.FilterQuery{
+		Addresses: c.addresses,
+		FromBlock: bigBlockNumber,
+		ToBlock:   bigBlockNumber,
+	})
+	if err != nil {
+		return fmt.Errorf("call to FilterLogs failed: %v", err)
+	}
+	for _, log := range logs {
+		if log.Removed {
+			common.PromReorgErrors.WithLabelValues(c.name).Inc()
+			c.logger.Errorw("Ignoring unexpected removed log", "tx_hash", log.TxHash, "tx_index", log.TxIndex)
 		} else {
-			c.logger.Errorw("Calling HeaderByNumber failed", "err", err)
+			c.decodeAndOutputLog(&log, header.Time)
 		}
 	}
-	return
+	c.lastBlockNumber = blockNumber
+	c.lastBlockHash = header.Hash()
+	return nil
 }
 
-func (c chain) handleLog(ctx context.Context, client *ethclient.Client, log *ethtypes.Log, timestamp uint64) {
+func (c chain) decodeAndOutputLog(log *ethtypes.Log, timestamp uint64) {
 	contract := c.addressMap[log.Address]
 	common.PromLogsReceived.WithLabelValues(c.name, contract.Name()).Inc()
 	blockTs := time.Unix(int64(timestamp), 0)
 	event, err := decodeEvent(blockTs, log, contract)
 	if err != nil {
-		c.logger.Errorw("Failed to parse event", "err", err)
+		common.PromEventsMalformed.WithLabelValues(c.name, contract.Name()).Inc()
+		c.logger.Errorw("Failed to decode event", "err", err)
 	} else if event != nil {
 		common.PromEvents.WithLabelValues(c.name, contract.Name(), event.EventName).Inc()
-
-		for _, output := range c.outputs {
-			output.Write(event)
-		}
+		c.outputs.Write(event)
 	}
 }

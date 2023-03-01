@@ -34,7 +34,6 @@ func decodeEvent(blockTs time.Time, log *ethtypes.Log, contract types.Contract) 
 			TxHash:      log.TxHash,
 			TxIndex:     log.TxIndex,
 			LogIndex:    log.Index,
-			LogRemoved:  log.Removed,
 		}
 		return eventData, nil
 	}

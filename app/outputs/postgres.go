@@ -39,7 +39,7 @@ var (
 func NewPostgres(logger *zap.SugaredLogger, retention time.Duration) Postgres {
 	return &postgres{
 		logger:    logger.Named("postgres"),
-		queue:     make(chan *types.Event, common.DefaultQueueCapacity),
+		queue:     make(chan *types.Event, common.DefaultPosgresQueueCapacity),
 		retention: retention,
 		lastPrune: time.Now().Add(-common.DefaultPostgresPruneInterval),
 	}
@@ -137,7 +137,7 @@ func (d postgres) MigrateSchema(ctx context.Context, contracts types.ContractsPe
 }
 
 func (d postgres) Write(event *types.Event) {
-	if len(d.queue) < common.DefaultQueueCapacity {
+	if len(d.queue) < common.DefaultPosgresQueueCapacity {
 		d.queue <- event
 	} else {
 		common.PromQueueDiscarded.WithLabelValues("postgres").Inc()
@@ -147,11 +147,7 @@ func (d postgres) Write(event *types.Event) {
 
 func (d postgres) handleEvent(ctx context.Context, event *types.Event) {
 	tableName := eventsTableQN(event.Contract)
-	if event.LogRemoved {
-		d.removeRecords(ctx, tableName, event.BlockNumber)
-	} else {
-		d.insertRecord(ctx, tableName, event)
-	}
+	d.insertRecord(ctx, tableName, event)
 	d.pruneEvents(ctx, tableName)
 }
 
@@ -186,17 +182,6 @@ func (d postgres) insertRecord(ctx context.Context, tableName string, event *typ
 		} else {
 			common.PromPostgresInserts.WithLabelValues(tableName).Inc()
 		}
-	}
-}
-
-func (d postgres) removeRecords(ctx context.Context, tableName string, blockNumber uint64) {
-	q := fmt.Sprintf("DELETE FROM %s WHERE block_number=%d", tableName, blockNumber)
-	_, err := d.db.ExecContext(ctx, q)
-	if err != nil {
-		common.PromPostgresErrors.WithLabelValues(tableName).Inc()
-		d.logger.Errorw("Postgres failed to delete", "err", err, "q", q)
-	} else {
-		common.PromPostgresDrops.WithLabelValues(tableName).Inc()
 	}
 }
 

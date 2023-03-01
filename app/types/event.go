@@ -18,5 +18,4 @@ type Event struct {
 	TxHash      common.Hash
 	TxIndex     uint
 	LogIndex    uint
-	LogRemoved  bool
 }

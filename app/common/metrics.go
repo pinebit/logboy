@@ -26,6 +26,16 @@ var (
 		Help: "The total number of events per chain, contract and event name",
 	}, []string{"chainName", "contractName", "eventName"})
 
+	PromEventsMalformed = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "lognite_events_malformed",
+		Help: "The total number of malformed events per chain and contract name",
+	}, []string{"chainName", "contractName"})
+
+	PromReorgErrors = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "lognite_reorg_errors",
+		Help: "The total number of errors due to chain reorgs that may affect data consistency",
+	}, []string{"chainName"})
+
 	PromConfiguredEvents = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "lognite_configured_events",
 		Help: "The total number of events configured per chain and contract",
