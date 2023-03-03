@@ -1,13 +1,17 @@
-FROM golang:1.19-alpine
+FROM golang:1.20-alpine as builder
 
 WORKDIR /service
 
-COPY * ./
+COPY go.mod ./
+COPY go.sum ./
+COPY *.go ./
+COPY app/ ./app/
 
-RUN apk add build-base
 RUN go mod download
 RUN go build -o /lognite
 
-EXPOSE 8080
+FROM alpine
+
+COPY --from=builder /lognite /lognite
 
 CMD [ "/lognite" ]

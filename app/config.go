@@ -50,8 +50,8 @@ type Config struct {
 	Outputs OutputsConfig          `yaml:"outputs"`
 }
 
-func LoadConfigJSON(jsonPath string) (*Config, error) {
-	data, err := os.ReadFile(jsonPath)
+func LoadConfig(filepath string) (*Config, error) {
+	data, err := os.ReadFile(filepath)
 	if err != nil {
 		return nil, err
 	}

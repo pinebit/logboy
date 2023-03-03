@@ -20,7 +20,7 @@ type Postgres interface {
 	types.Output
 
 	Connect(ctx context.Context, url string) error
-	Close(ctx context.Context) error
+	Close() error
 	MigrateSchema(ctx context.Context, contracts types.ContractsPerChain) error
 }
 
@@ -57,7 +57,7 @@ func (d *postgres) Connect(ctx context.Context, url string) error {
 	return nil
 }
 
-func (d *postgres) Close(ctx context.Context) error {
+func (d *postgres) Close() error {
 	if d.db != nil {
 		close(d.queue)
 		if err := d.db.Close(); err != nil {

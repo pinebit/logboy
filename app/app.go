@@ -41,7 +41,7 @@ func (a *app) Start() error {
 	defer a.logger.Sync()
 
 	a.logger.Debugf("Loading config from %s...", a.configPath)
-	config, err := LoadConfigJSON(a.configPath)
+	config, err := LoadConfig(a.configPath)
 	if err != nil {
 		return fmt.Errorf("failed to read config file: %v", err)
 	}
@@ -66,7 +66,7 @@ func (a *app) Start() error {
 		if err := pg.Connect(rootCtx, config.Outputs.Postgres.URL); err != nil {
 			return fmt.Errorf("failed to connect Postgres: url=%s", config.Outputs.Postgres.URL)
 		}
-		defer pg.Close(rootCtx)
+		defer pg.Close()
 
 		if err := pg.MigrateSchema(rootCtx, contracts); err != nil {
 			return fmt.Errorf("failed to migrate postgres schema: %v", err)
